@@ -1,0 +1,27 @@
+# Go
+*.exe
+*.test
+/server
+/data/
+*.log
+
+# Release tooling
+/node_modules/
+
+# Frontend
+web/node_modules/
+internal/webapp/dist/*
+!internal/webapp/dist/index.html
+
+# Docs
+docs/node_modules/
+docs/build/
+docs/.docusaurus/
+
+# Env / local
+.env
+*.local
+
+# OS
+.DS_Store
+Thumbs.db

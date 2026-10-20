@@ -1,0 +1,8 @@
+.git
+data
+web/node_modules
+node_modules
+internal/webapp/dist/*
+!internal/webapp/dist/index.html
+*.log
+server.exe

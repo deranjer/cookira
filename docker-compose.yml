@@ -1,0 +1,41 @@
+name: cookira
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/cookira?sslmode=disable
+      ADDR: ":8080"
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      IMAGES_DIR: /data/images
+    volumes:
+      - images:/data/images
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:18-alpine
+    ports:
+      # 5434 on the host to avoid clashing with any other local Postgres.
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cookira
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql (versioned subdir).
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  images:

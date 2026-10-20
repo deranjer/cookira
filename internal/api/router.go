@@ -1,0 +1,158 @@
+// Package api wires up HTTP routes: the huma-generated OpenAPI layer under
+// /api/v1 (used by the web UI and external clients), the image endpoints,
+// and the MCP server at /mcp.
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/deranjer/cookira/internal/auth"
+	"github.com/deranjer/cookira/internal/db"
+	"github.com/deranjer/cookira/internal/mcpserver"
+	"github.com/deranjer/cookira/internal/oauth"
+	"github.com/deranjer/cookira/internal/recipes"
+	"github.com/deranjer/cookira/internal/version"
+)
+
+type Server struct {
+	Router  *chi.Mux
+	q       *db.Queries
+	mgr     *auth.Manager
+	svc     *recipes.Service
+	oauth   *oauth.Server
+	humaAPI huma.API
+}
+
+func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string) *Server {
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	humaCfg := huma.DefaultConfig("Cookira API", version.Version)
+	humaCfg.Servers = []*huma.Server{{URL: "/api/v1"}}
+	humaAPI := humachi.New(r, humaCfg)
+
+	q := db.New(pool)
+	mgr := auth.NewManager(q)
+	s := &Server{Router: r, q: q, mgr: mgr, svc: svc, oauth: oauth.New(pool, mgr, publicURL), humaAPI: humaAPI}
+
+	huma.Register(humaAPI, huma.Operation{
+		OperationID: "health",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/health",
+		Summary:     "Health check",
+		Tags:        []string{"System"},
+	}, func(ctx context.Context, input *struct{}) (*healthOutput, error) {
+		out := &healthOutput{}
+		out.Body.Status = "ok"
+		out.Body.Version = version.Version
+		out.Body.DBConnected = pool.Ping(ctx) == nil
+		return out, nil
+	})
+
+	s.registerSetupRoutes()
+	s.registerAuthRoutes()
+	s.registerUserRoutes()
+	s.registerAPIKeyRoutes()
+	s.registerRecipeRoutes()
+	s.registerShareRoutes()
+	s.registerPublicRoutes()
+	s.registerImageRoutes(r)
+	s.oauth.Mount(r)
+	s.registerOAuthConnectionRoutes()
+	s.registerMCPRoute(r)
+
+	return s
+}
+
+// protected returns the huma middleware chain that guards operations
+// behind a valid session or API key.
+func (s *Server) protected() huma.Middlewares {
+	return huma.Middlewares{requireAuth(s.humaAPI, s.mgr)}
+}
+
+// requireWrite rejects read-only API keys. Browser sessions always write.
+func requireWrite(ctx context.Context) error {
+	if !auth.CanWrite(ctx) {
+		return huma.Error403Forbidden("this API key is read-only")
+	}
+	return nil
+}
+
+// registerMCPRoute mounts the MCP server at /mcp, behind the same auth as
+// the REST API: a Bearer API key or OAuth access token for agents. An
+// unauthenticated request gets a 401 pointing at the OAuth resource metadata. Stateless because every
+// request is independently authenticated.
+func (s *Server) registerMCPRoute(r *chi.Mux) {
+	mcpSrv := mcpserver.New(s.svc)
+	handler := mcpsdk.NewStreamableHTTPHandler(
+		func(*http.Request) *mcpsdk.Server { return mcpSrv },
+		&mcpsdk.StreamableHTTPOptions{Stateless: true},
+	)
+	r.With(auth.RequireAuth(s.mgr, s.oauth.ResourceMetadataURL())).Handle("/mcp", handler)
+}
+
+type healthBody struct {
+	Status      string `json:"status" example:"ok"`
+	Version     string `json:"version"`
+	DBConnected bool   `json:"dbConnected"`
+}
+
+type healthOutput struct {
+	Body healthBody
+}
+
+type statusBody struct {
+	Status string `json:"status"`
+}
+
+type statusOutput struct {
+	Body statusBody
+}
+
+func okOutput() *statusOutput {
+	return &statusOutput{Body: statusBody{Status: "ok"}}
+}
+
+// mapErr converts domain errors to HTTP problem responses.
+func mapErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, recipes.ErrNotFound):
+		return huma.Error404NotFound("not found")
+	case errors.Is(err, recipes.ErrInvalid):
+		return huma.Error422UnprocessableEntity(err.Error())
+	default:
+		return err
+	}
+}
+
+func mustUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	err := u.Scan(s)
+	return u, err
+}
+
+func ts(t pgtype.Timestamptz) string {
+	return t.Time.Format("2006-01-02T15:04:05Z07:00")
+}
+
+func nullableTimestamp(t pgtype.Timestamptz) *string {
+	if !t.Valid {
+		return nil
+	}
+	s := ts(t)
+	return &s
+}
