@@ -35,6 +35,25 @@ secure-cookie flag are right behind a TLS proxy.
 | `ADDR` | `:8080` | listen address |
 | `PUBLIC_URL` | `http://localhost:8080` | used for share links; `https://` enables Secure cookies |
 | `IMAGES_DIR` | `./data/images` | recipe photos |
+| `JWT_SECRET` | random per run | signs login tokens; **set to 32+ characters in production** (`openssl rand -hex 32`). Without it, tokens are invalidated on every restart (clients silently refresh, so nothing breaks, but set it anyway) |
+
+### Accounts and login
+
+The first visit creates the admin. After that, admins add people from
+**Settings → Household**: **Invite** makes a single-use link (7 days, optionally
+locked to an email address, shown once) where the invitee picks their own name
+and password; **Add with password** is the manual alternative. Admins can also
+change roles, reset passwords and remove members.
+
+Login uses short-lived (15 min) JWT access tokens plus rotating, single-use
+refresh tokens (90 days, stored hashed; replaying a used one revokes that
+user's tokens). The web app keeps both in httpOnly cookies and refreshes
+silently. Other clients (a mobile app) pass `"tokens": true` to
+`POST /api/v1/auth/login` (or `/setup`, `/invites/accept/{token}`) to get
+`{accessToken, refreshToken, ...}` in the response body instead, send
+`Authorization: Bearer <accessToken>`, and renew with
+`POST /api/v1/auth/refresh {"refreshToken": "..."}`. Changing your password
+signs out your other devices; repeated failed logins for an email are throttled.
 
 ## Development
 
@@ -132,7 +151,7 @@ cmd/server/            entrypoint
 internal/recipes/      domain layer: validation, revisions, shares, images (REST and MCP both use it)
 internal/api/          huma/chi routes (REST, images, public share view, /mcp mount)
 internal/mcpserver/    MCP tools
-internal/auth/         sessions, bcrypt, Bearer API keys and OAuth access tokens
+internal/auth/         JWT + refresh tokens, bcrypt, Bearer API keys and OAuth access tokens
 internal/oauth/        OAuth 2.1 authorization server (discovery, registration, token, consent API)
 internal/db/           migrations (goose), queries (sqlc), generated code
 internal/storage/      image storage interface (local disk)

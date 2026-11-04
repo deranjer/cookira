@@ -10,6 +10,8 @@ services:
       ADDR: ":8080"
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       IMAGES_DIR: /data/images
+      # Set in .env (openssl rand -hex 32); unset = random per start.
+      JWT_SECRET: ${JWT_SECRET:-}
     volumes:
       - images:/data/images
     depends_on:

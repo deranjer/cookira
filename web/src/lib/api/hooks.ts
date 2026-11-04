@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   apiKeysApi,
   authApi,
+  invitesApi,
   oauthApi,
   recipesApi,
   setupApi,
@@ -53,6 +54,63 @@ export function useCreateUser() {
   return useMutation({
     mutationFn: usersApi.create,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  })
+}
+
+export function useUpdateMe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: authApi.update,
+    onSuccess: (user) => qc.setQueryData(['me'], user),
+  })
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string; name?: string; role?: string; password?: string }) =>
+      usersApi.update(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  })
+}
+
+export function useRemoveUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: usersApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  })
+}
+
+export function useInvites(enabled: boolean) {
+  return useQuery({ queryKey: ['invites'], queryFn: invitesApi.list, enabled })
+}
+
+export function useCreateInvite() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: invitesApi.create,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['invites'] }),
+  })
+}
+
+export function useRevokeInvite() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: invitesApi.revoke,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['invites'] }),
+  })
+}
+
+export function useInviteInfo(token: string) {
+  return useQuery({ queryKey: ['invite', token], queryFn: () => invitesApi.lookup(token), retry: false })
+}
+
+export function useAcceptInvite(token: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { name: string; email?: string; password: string }) => invitesApi.accept(token, v),
+    onSuccess: (user) => qc.setQueryData(['me'], user),
   })
 }
 

@@ -7,6 +7,8 @@ import type {
   RecipeInput,
   RecipeList,
   Revision,
+  Invite,
+  InviteInfo,
   Share,
   TagCount,
   User,
@@ -20,12 +22,45 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit, prefix = '/api/v1'): Promise<T> {
-  const res = await fetch(`${prefix}${path}`, {
+// Access tokens are short-lived (15 min) and live in an httpOnly cookie. When a
+// request comes back 401 we silently redeem the refresh cookie once - shared
+// by all concurrent requests, since refresh tokens are single-use - and retry.
+let refreshing: Promise<boolean> | null = null
+
+function refreshSession(): Promise<boolean> {
+  refreshing ??= fetch('/api/v1/auth/refresh', {
+    method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    ...init,
+    body: '{}',
   })
+    .then((res) => res.ok)
+    .catch(() => false)
+    .finally(() => {
+      refreshing = null
+    })
+  return refreshing
+}
+
+// Endpoints where a 401 means "wrong credentials", not "expired access token".
+const noRefreshPaths = ['/auth/login', '/auth/refresh', '/auth/logout', '/setup', '/invites/']
+
+// fetchWithRefresh is fetch with credentials and one transparent refresh+retry.
+export async function fetchWithRefresh(url: string, init: RequestInit, canRefresh = true): Promise<Response> {
+  const res = await fetch(url, { credentials: 'include', ...init })
+  if (res.status === 401 && canRefresh && (await refreshSession())) {
+    return fetch(url, { credentials: 'include', ...init })
+  }
+  return res
+}
+
+async function request<T>(path: string, init?: RequestInit, prefix = '/api/v1'): Promise<T> {
+  const canRefresh = !noRefreshPaths.some((p) => path.startsWith(p))
+  const res = await fetchWithRefresh(
+    `${prefix}${path}`,
+    { headers: { 'Content-Type': 'application/json' }, ...init },
+    canRefresh,
+  )
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new ApiError(res.status, body.detail || body.error_description || body.title || `request failed: ${res.status}`)
@@ -41,6 +76,8 @@ export const authApi = {
   login: (email: string, password: string) =>
     request<User>('/auth/login', { method: 'POST', body: json({ email, password }) }),
   logout: () => request<{ status: string }>('/auth/logout', { method: 'POST' }),
+  update: (input: { name?: string; currentPassword?: string; password?: string }) =>
+    request<User>('/auth/me', { method: 'PATCH', body: json(input) }),
 }
 
 export const setupApi = {
@@ -53,6 +90,19 @@ export const usersApi = {
   list: () => request<User[]>('/users'),
   create: (input: { name: string; email: string; password: string; role: string }) =>
     request<User>('/users', { method: 'POST', body: json(input) }),
+  update: (id: string, input: { name?: string; role?: string; password?: string }) =>
+    request<User>(`/users/${id}`, { method: 'PATCH', body: json(input) }),
+  remove: (id: string) => request<{ status: string }>(`/users/${id}`, { method: 'DELETE' }),
+}
+
+export const invitesApi = {
+  list: () => request<Invite[]>('/invites'),
+  create: (input: { email?: string; role: string; expiresInDays?: number }) =>
+    request<Invite>('/invites', { method: 'POST', body: json(input) }),
+  revoke: (id: string) => request<{ status: string }>(`/invites/${id}`, { method: 'DELETE' }),
+  lookup: (token: string) => request<InviteInfo>(`/invites/lookup/${encodeURIComponent(token)}`),
+  accept: (token: string, input: { name: string; email?: string; password: string }) =>
+    request<User>(`/invites/accept/${encodeURIComponent(token)}`, { method: 'POST', body: json(input) }),
 }
 
 export const oauthApi = {
@@ -105,9 +155,8 @@ export const recipesApi = {
     const form = new FormData()
     form.append('file', file)
     // Raw fetch: the upload route is a multipart handler, not a JSON operation.
-    const res = await fetch(`/api/v1/recipes/${encodeURIComponent(ref)}/image`, {
+    const res = await fetchWithRefresh(`/api/v1/recipes/${encodeURIComponent(ref)}/image`, {
       method: 'PUT',
-      credentials: 'include',
       body: form,
     })
     if (!res.ok) {

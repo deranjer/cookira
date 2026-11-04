@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -25,15 +26,19 @@ import (
 )
 
 type Server struct {
-	Router  *chi.Mux
-	q       *db.Queries
-	mgr     *auth.Manager
-	svc     *recipes.Service
-	oauth   *oauth.Server
-	humaAPI huma.API
+	Router    *chi.Mux
+	pool      *pgxpool.Pool
+	q         *db.Queries
+	mgr       *auth.Manager
+	limiter   *auth.LoginLimiter
+	publicURL string
+	svc       *recipes.Service
+	oauth     *oauth.Server
+	humaAPI   huma.API
 }
 
-func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string) *Server {
+// New builds the HTTP server. jwtSecret signs login access tokens.
+func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string, jwtSecret []byte) *Server {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
@@ -44,8 +49,8 @@ func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string) *Server {
 	humaAPI := humachi.New(r, humaCfg)
 
 	q := db.New(pool)
-	mgr := auth.NewManager(q)
-	s := &Server{Router: r, q: q, mgr: mgr, svc: svc, oauth: oauth.New(pool, mgr, publicURL), humaAPI: humaAPI}
+	mgr := auth.NewManager(q, jwtSecret)
+	s := &Server{Router: r, pool: pool, q: q, mgr: mgr, limiter: auth.NewLoginLimiter(10, 15*time.Minute), publicURL: publicURL, svc: svc, oauth: oauth.New(pool, mgr, publicURL), humaAPI: humaAPI}
 
 	huma.Register(humaAPI, huma.Operation{
 		OperationID: "health",
@@ -64,6 +69,7 @@ func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string) *Server {
 	s.registerSetupRoutes()
 	s.registerAuthRoutes()
 	s.registerUserRoutes()
+	s.registerInviteRoutes()
 	s.registerAPIKeyRoutes()
 	s.registerRecipeRoutes()
 	s.registerShareRoutes()

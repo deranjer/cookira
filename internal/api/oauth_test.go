@@ -58,7 +58,7 @@ func newOAuthEnv(t *testing.T) *oauthEnv {
 		t.Fatal(err)
 	}
 	q := db.New(pool)
-	srv := New(pool, recipes.New(pool, q, store, testBase), testBase)
+	srv := New(pool, recipes.New(pool, q, store, testBase), testBase, []byte("test-secret-test-secret-test-secret!"))
 
 	user, err := q.CreateUser(context.Background(), db.CreateUserParams{
 		Name: "OAuth Tester", Email: fmt.Sprintf("oauth-%d@example.com", time.Now().UnixNano()), Role: "member",
@@ -66,10 +66,11 @@ func newOAuthEnv(t *testing.T) *oauthEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := srv.mgr.CreateSession(context.Background(), user.ID)
+	tokens, err := srv.mgr.IssueTokens(context.Background(), user.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c := auth.AccessCookie(tokens.Access, tokens.AccessExp)
 	return &oauthEnv{t: t, srv: srv, userID: user.ID, cookie: &c}
 }
 

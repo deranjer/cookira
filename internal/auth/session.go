@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,65 +13,142 @@ import (
 )
 
 const (
-	// CookieName is the session cookie's name; huma handlers reference it
-	// directly via the `cookie:"..."` input tag.
-	CookieName = "cookira_session"
-	sessionTTL = 30 * 24 * time.Hour
+	// AccessCookieName holds the JWT access token; RefreshCookieName the
+	// opaque refresh token. Browsers use cookies; other clients (mobile)
+	// use bearer tokens in headers/bodies instead and never see these.
+	AccessCookieName  = "cookira_token"
+	RefreshCookieName = "cookira_refresh"
+
+	// refreshCookiePath scopes the refresh cookie to the auth endpoints so
+	// it isn't sent with every API request.
+	refreshCookiePath = "/api/v1/auth"
+
+	// refreshReuseGrace is how soon after a refresh token was rotated a
+	// second redemption is treated as a benign race (two tabs refreshing at
+	// once) instead of token theft.
+	refreshReuseGrace = 30 * time.Second
 )
 
-// SecureCookies marks session cookies Secure; main sets it when the public
-// URL is https.
+// SecureCookies marks auth cookies Secure; main sets it when the public URL
+// is https.
 var SecureCookies bool
 
 var ErrInvalidSession = errors.New("invalid or expired session")
 
-// Manager creates, validates and destroys DB-backed sessions.
+// Tokens is a freshly issued access/refresh pair.
+type Tokens struct {
+	Access     string
+	AccessExp  time.Time
+	Refresh    string
+	RefreshExp time.Time
+}
+
+// Manager issues, rotates and validates login credentials.
 type Manager struct {
-	q *db.Queries
+	q      *db.Queries
+	secret []byte
 }
 
-func NewManager(q *db.Queries) *Manager {
-	return &Manager{q: q}
+func NewManager(q *db.Queries, secret []byte) *Manager {
+	return &Manager{q: q, secret: secret}
 }
 
-// CreateSession creates a new session for userID and returns the Set-Cookie
-// header value for it (huma output structs set this via a
-// `header:"Set-Cookie"` field).
-func (m *Manager) CreateSession(ctx context.Context, userID pgtype.UUID) (http.Cookie, error) {
-	sess, err := m.q.CreateSession(ctx, db.CreateSessionParams{
-		UserID:    userID,
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(sessionTTL), Valid: true},
-	})
+// IssueTokens mints an access token and a new refresh token for userID.
+func (m *Manager) IssueTokens(ctx context.Context, userID pgtype.UUID) (Tokens, error) {
+	now := time.Now()
+	access, accessExp, err := SignAccessToken(m.secret, userID.String(), now)
 	if err != nil {
-		return http.Cookie{}, err
+		return Tokens{}, err
 	}
-	return NewCookie(sess.ID.String(), sess.ExpiresAt.Time), nil
+	refresh, hash := GenerateRefreshToken()
+	refreshExp := now.Add(RefreshTokenTTL)
+	if _, err := m.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+		UserID:    userID,
+		TokenHash: hash,
+		ExpiresAt: pgtype.Timestamptz{Time: refreshExp, Valid: true},
+	}); err != nil {
+		return Tokens{}, err
+	}
+	return Tokens{Access: access, AccessExp: accessExp, Refresh: refresh, RefreshExp: refreshExp}, nil
 }
 
-// DeleteSession removes the session with the given (string) ID. Malformed
-// IDs are treated as already-gone rather than an error.
-func (m *Manager) DeleteSession(ctx context.Context, idStr string) error {
-	if idStr == "" {
-		return nil
+// Refresh redeems a refresh token: it is revoked and a new pair issued. A
+// token that was already redeemed (outside the race grace) means it leaked
+// and was replayed, so every refresh token of that user is revoked.
+func (m *Manager) Refresh(ctx context.Context, raw string) (pgtype.UUID, Tokens, error) {
+	if raw == "" {
+		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
 	}
-	var id pgtype.UUID
-	if err := id.Scan(idStr); err != nil {
-		return nil
+	rt, err := m.q.GetRefreshTokenByHash(ctx, HashAPIKey(raw))
+	if err != nil {
+		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
 	}
-	return m.q.DeleteSession(ctx, id)
-}
-
-// IdentityFromRequest resolves the caller from either a Bearer API key
-// (checked first — agents/scripts) or the session cookie (browser).
-// Used by the RequireAuth middleware and the huma-level requireAuth.
-func (m *Manager) IdentityFromRequest(ctx context.Context, r *http.Request) (Identity, error) {
-	if key := bearerToken(r); key != "" {
-		if isOAuthAccessToken(key) {
-			return m.identityFromOAuthToken(ctx, key)
+	if rt.RevokedAt.Valid {
+		if time.Since(rt.RevokedAt.Time) > refreshReuseGrace {
+			_ = m.q.RevokeAllRefreshTokensForUser(ctx, rt.UserID)
 		}
-		return m.identityFromAPIKey(ctx, key)
+		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
 	}
-	return m.identityFromCookie(ctx, r)
+	if rt.ExpiresAt.Time.Before(time.Now()) {
+		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
+	}
+	n, err := m.q.RevokeRefreshToken(ctx, rt.ID)
+	if err != nil {
+		return pgtype.UUID{}, Tokens{}, err
+	}
+	if n == 0 { // lost a race with a concurrent redemption
+		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
+	}
+	tokens, err := m.IssueTokens(ctx, rt.UserID)
+	return rt.UserID, tokens, err
+}
+
+// Revoke invalidates a single refresh token (logout). Unknown tokens are
+// ignored.
+func (m *Manager) Revoke(ctx context.Context, raw string) {
+	if raw != "" {
+		_ = m.q.RevokeRefreshTokenByHash(ctx, HashAPIKey(raw))
+	}
+}
+
+// RevokeAll signs a user out everywhere, optionally keeping one refresh
+// token (the caller's own) alive.
+func (m *Manager) RevokeAll(ctx context.Context, userID pgtype.UUID, keepRaw string) error {
+	if keepRaw == "" {
+		return m.q.RevokeAllRefreshTokensForUser(ctx, userID)
+	}
+	return m.q.RevokeOtherRefreshTokensForUser(ctx, db.RevokeOtherRefreshTokensForUserParams{
+		UserID: userID, TokenHash: HashAPIKey(keepRaw),
+	})
+}
+
+// IdentityFromRequest resolves the caller from a Bearer credential (API
+// key, OAuth access token or login JWT, told apart by prefix) or, failing
+// that, the access-token cookie (browser).
+func (m *Manager) IdentityFromRequest(ctx context.Context, r *http.Request) (Identity, error) {
+	if tok := bearerToken(r); tok != "" {
+		switch {
+		case isOAuthAccessToken(tok):
+			return m.identityFromOAuthToken(ctx, tok)
+		case strings.HasPrefix(tok, apiKeyPrefix):
+			return m.identityFromAPIKey(ctx, tok)
+		default:
+			return m.identityFromJWT(tok)
+		}
+	}
+	c, err := r.Cookie(AccessCookieName)
+	if err != nil {
+		return Identity{}, ErrInvalidSession
+	}
+	return m.identityFromJWT(c.Value)
+}
+
+func (m *Manager) identityFromJWT(token string) (Identity, error) {
+	sub, err := VerifyAccessToken(m.secret, token)
+	if err != nil {
+		return Identity{}, ErrInvalidSession
+	}
+	return Identity{UserID: sub, Write: true}, nil
 }
 
 func bearerToken(r *http.Request) string {
@@ -93,47 +171,26 @@ func (m *Manager) identityFromAPIKey(ctx context.Context, plaintext string) (Ide
 	return Identity{UserID: key.UserID.String(), ViaAPIKey: true, Write: ScopesCanWrite(key.Scopes), KeyName: key.Name}, nil
 }
 
-func (m *Manager) identityFromCookie(ctx context.Context, r *http.Request) (Identity, error) {
-	c, err := r.Cookie(CookieName)
-	if err != nil {
-		return Identity{}, ErrInvalidSession
-	}
-	var id pgtype.UUID
-	if err := id.Scan(c.Value); err != nil {
-		return Identity{}, ErrInvalidSession
-	}
-	sess, err := m.q.GetSession(ctx, id)
-	if err != nil {
-		return Identity{}, ErrInvalidSession
-	}
-	if !sess.ExpiresAt.Valid || sess.ExpiresAt.Time.Before(time.Now()) {
-		return Identity{}, ErrInvalidSession
-	}
-	return Identity{UserID: sess.UserID.String(), Write: true}, nil
-}
-
-// NewCookie builds the Set-Cookie value for a live session.
-func NewCookie(value string, expires time.Time) http.Cookie {
+// AccessCookie builds the Set-Cookie value for an access token.
+func AccessCookie(token string, exp time.Time) http.Cookie {
 	return http.Cookie{
-		Name:     CookieName,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   SecureCookies,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  expires,
+		Name: AccessCookieName, Value: token, Path: "/",
+		HttpOnly: true, Secure: SecureCookies, SameSite: http.SameSiteLaxMode, Expires: exp,
 	}
 }
 
-// ClearedCookie builds a Set-Cookie value that deletes the session cookie.
-func ClearedCookie() http.Cookie {
+// RefreshCookie builds the Set-Cookie value for a refresh token.
+func RefreshCookie(token string, exp time.Time) http.Cookie {
 	return http.Cookie{
-		Name:     CookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   SecureCookies,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
+		Name: RefreshCookieName, Value: token, Path: refreshCookiePath,
+		HttpOnly: true, Secure: SecureCookies, SameSite: http.SameSiteLaxMode, Expires: exp,
+	}
+}
+
+// ClearedCookies returns Set-Cookie values that delete both auth cookies.
+func ClearedCookies() []http.Cookie {
+	return []http.Cookie{
+		{Name: AccessCookieName, Path: "/", HttpOnly: true, Secure: SecureCookies, SameSite: http.SameSiteLaxMode, MaxAge: -1},
+		{Name: RefreshCookieName, Path: refreshCookiePath, HttpOnly: true, Secure: SecureCookies, SameSite: http.SameSiteLaxMode, MaxAge: -1},
 	}
 }
