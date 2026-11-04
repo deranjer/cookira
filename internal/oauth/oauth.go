@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -50,10 +51,37 @@ type Server struct {
 	q    *db.Queries
 	mgr  *auth.Manager
 	base string // public origin, no trailing slash; also the issuer
+
+	// Per-peer-IP limits on the unauthenticated endpoints, which write to
+	// the database: registration creates client rows, token/revoke hash and
+	// look up secrets. Forwarding headers are ignored on purpose: clients
+	// behind a reverse proxy share the proxy's budget.
+	registerLimit *auth.WindowLimiter
+	tokenLimit    *auth.WindowLimiter
 }
 
 func New(pool *pgxpool.Pool, mgr *auth.Manager, publicURL string) *Server {
-	return &Server{pool: pool, q: db.New(pool), mgr: mgr, base: strings.TrimRight(publicURL, "/")}
+	return &Server{
+		pool: pool, q: db.New(pool), mgr: mgr, base: strings.TrimRight(publicURL, "/"),
+		registerLimit: auth.NewWindowLimiter(10, time.Minute),
+		tokenLimit:    auth.NewWindowLimiter(60, time.Minute),
+	}
+}
+
+// limit rejects requests beyond l's per-minute budget for the peer address.
+func limit(l *auth.WindowLimiter, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		if !l.Allow(host) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests; try again in a minute")
+			return
+		}
+		next(w, r)
+	}
 }
 
 // ResourceMetadataURL is where /mcp's WWW-Authenticate challenge points.
@@ -67,14 +95,23 @@ func (s *Server) Mount(r chi.Router) {
 		r.Get("/.well-known/oauth-protected-resource", s.protectedResource)
 		r.Get("/.well-known/oauth-protected-resource/mcp", s.protectedResource)
 		r.Get("/.well-known/oauth-authorization-server", s.serverMetadata)
-		r.Post("/oauth/register", s.register)
-		r.Post("/oauth/token", s.token)
-		r.Post("/oauth/revoke", s.revoke)
-		r.Options("/oauth/*", noContent)
-		r.Options("/.well-known/*", noContent)
+		r.Post("/oauth/register", limit(s.registerLimit, s.register))
+		r.Post("/oauth/token", limit(s.tokenLimit, s.token))
+		r.Post("/oauth/revoke", limit(s.tokenLimit, s.revoke))
+		// CORS preflights, listed per endpoint rather than as an "/oauth/*"
+		// wildcard: a wildcard would make GET /oauth/authorize (the consent page
+		// served by the web app) answer 405 instead of falling through to it.
+		r.Options("/oauth/register", noContent)
+		r.Options("/oauth/token", noContent)
+		r.Options("/oauth/revoke", noContent)
+		r.Options("/.well-known/oauth-protected-resource", noContent)
+		r.Options("/.well-known/oauth-protected-resource/mcp", noContent)
+		r.Options("/.well-known/oauth-authorization-server", noContent)
 	})
 	r.Group(func(r chi.Router) {
-		r.Use(auth.RequireAuth(s.mgr), sessionOnly)
+		// Approving a connection takes a person's login; OAuth tokens are
+		// rejected by RequireAuth, so a connected app can't approve another.
+		r.Use(auth.RequireAuth(s.mgr))
 		r.Get("/oauth/authorize/info", s.authorizeInfo)
 		r.Post("/oauth/authorize/decision", s.authorizeDecision)
 	})
@@ -90,18 +127,6 @@ func cors(next http.Handler) http.Handler {
 		h.Set("Access-Control-Allow-Origin", "*")
 		h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, MCP-Protocol-Version")
-		next.ServeHTTP(w, r)
-	})
-}
-
-// sessionOnly rejects connected apps and API keys: only a signed-in browser
-// session may approve new connections.
-func sessionOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if id, ok := auth.IdentityFromContext(r.Context()); !ok || id.ViaAPIKey {
-			writeError(w, http.StatusForbidden, "access_denied", "sign in with a browser session")
-			return
-		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -405,7 +430,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, clientID pgtype.UUID) {
 	ctx := r.Context()
-	code, err := s.q.ConsumeOAuthCode(ctx, auth.HashAPIKey(r.PostForm.Get("code")))
+	code, err := s.q.ConsumeOAuthCode(ctx, auth.HashToken(r.PostForm.Get("code")))
 	if err != nil || !code.ExpiresAt.Valid || code.ExpiresAt.Time.Before(time.Now()) || code.ClientID != clientID {
 		writeError(w, http.StatusBadRequest, "invalid_grant", "invalid or expired code")
 		return
@@ -445,7 +470,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, clientID p
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request, clientID pgtype.UUID) {
 	ctx := r.Context()
-	t, err := s.q.GetOAuthTokenByHash(ctx, auth.HashAPIKey(r.PostForm.Get("refresh_token")))
+	t, err := s.q.GetOAuthTokenByHash(ctx, auth.HashToken(r.PostForm.Get("refresh_token")))
 	if err != nil || t.Kind != "refresh" || t.ClientID != clientID || !t.ExpiresAt.Valid || t.ExpiresAt.Time.Before(time.Now()) {
 		writeError(w, http.StatusBadRequest, "invalid_grant", "invalid or expired refresh token")
 		return
@@ -511,7 +536,7 @@ func issueTokens(ctx context.Context, q *db.Queries, grantID pgtype.UUID, scopes
 func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err == nil {
-		if t, err := s.q.GetOAuthTokenByHash(r.Context(), auth.HashAPIKey(r.PostForm.Get("token"))); err == nil {
+		if t, err := s.q.GetOAuthTokenByHash(r.Context(), auth.HashToken(r.PostForm.Get("token"))); err == nil {
 			_ = s.q.DeleteOAuthGrantByID(r.Context(), t.GrantID)
 		}
 	}
@@ -538,7 +563,7 @@ func newCode() (plaintext, hash string) {
 		panic(err)
 	}
 	plaintext = base64.RawURLEncoding.EncodeToString(b)
-	return plaintext, auth.HashAPIKey(plaintext)
+	return plaintext, auth.HashToken(plaintext)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

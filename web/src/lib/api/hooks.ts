@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  apiKeysApi,
   authApi,
   invitesApi,
   oauthApi,
@@ -111,26 +110,6 @@ export function useAcceptInvite(token: string) {
   return useMutation({
     mutationFn: (v: { name: string; email?: string; password: string }) => invitesApi.accept(token, v),
     onSuccess: (user) => qc.setQueryData(['me'], user),
-  })
-}
-
-export function useApiKeys() {
-  return useQuery({ queryKey: ['api-keys'], queryFn: apiKeysApi.list })
-}
-
-export function useCreateApiKey() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ name, readOnly }: { name: string; readOnly: boolean }) => apiKeysApi.create(name, readOnly),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-keys'] }),
-  })
-}
-
-export function useDeleteApiKey() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: apiKeysApi.delete,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-keys'] }),
   })
 }
 

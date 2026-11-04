@@ -102,18 +102,6 @@ export interface Share {
   expiresAt: string | null
 }
 
-export interface ApiKey {
-  id: string
-  name: string
-  scopes: string[]
-  createdAt: string
-  lastUsedAt: string | null
-}
-
-export interface NewApiKey extends ApiKey {
-  key: string
-}
-
 export interface OAuthConnection {
   id: string
   clientName: string

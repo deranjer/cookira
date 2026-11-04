@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -79,7 +78,7 @@ func (m *Manager) Refresh(ctx context.Context, raw string) (pgtype.UUID, Tokens,
 	if raw == "" {
 		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
 	}
-	rt, err := m.q.GetRefreshTokenByHash(ctx, HashAPIKey(raw))
+	rt, err := m.q.GetRefreshTokenByHash(ctx, HashToken(raw))
 	if err != nil {
 		return pgtype.UUID{}, Tokens{}, ErrInvalidSession
 	}
@@ -107,7 +106,7 @@ func (m *Manager) Refresh(ctx context.Context, raw string) (pgtype.UUID, Tokens,
 // ignored.
 func (m *Manager) Revoke(ctx context.Context, raw string) {
 	if raw != "" {
-		_ = m.q.RevokeRefreshTokenByHash(ctx, HashAPIKey(raw))
+		_ = m.q.RevokeRefreshTokenByHash(ctx, HashToken(raw))
 	}
 }
 
@@ -118,23 +117,16 @@ func (m *Manager) RevokeAll(ctx context.Context, userID pgtype.UUID, keepRaw str
 		return m.q.RevokeAllRefreshTokensForUser(ctx, userID)
 	}
 	return m.q.RevokeOtherRefreshTokensForUser(ctx, db.RevokeOtherRefreshTokensForUserParams{
-		UserID: userID, TokenHash: HashAPIKey(keepRaw),
+		UserID: userID, TokenHash: HashToken(keepRaw),
 	})
 }
 
-// IdentityFromRequest resolves the caller from a Bearer credential (API
-// key, OAuth access token or login JWT, told apart by prefix) or, failing
-// that, the access-token cookie (browser).
-func (m *Manager) IdentityFromRequest(ctx context.Context, r *http.Request) (Identity, error) {
+// IdentityFromRequest resolves a person: a login JWT as a Bearer credential
+// or, failing that, the access-token cookie (browser). OAuth access tokens
+// are deliberately not accepted here; they only work on /mcp.
+func (m *Manager) IdentityFromRequest(_ context.Context, r *http.Request) (Identity, error) {
 	if tok := bearerToken(r); tok != "" {
-		switch {
-		case isOAuthAccessToken(tok):
-			return m.identityFromOAuthToken(ctx, tok)
-		case strings.HasPrefix(tok, apiKeyPrefix):
-			return m.identityFromAPIKey(ctx, tok)
-		default:
-			return m.identityFromJWT(tok)
-		}
+		return m.identityFromJWT(tok)
 	}
 	c, err := r.Cookie(AccessCookieName)
 	if err != nil {
@@ -160,15 +152,15 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-func (m *Manager) identityFromAPIKey(ctx context.Context, plaintext string) (Identity, error) {
-	key, err := m.q.GetAPIKeyByHash(ctx, HashAPIKey(plaintext))
-	if err != nil {
+// IdentityFromOAuthRequest resolves a connected app: only an OAuth access
+// token sent as a Bearer credential. Cookies and login JWTs are rejected so
+// a browser session can never be replayed against /mcp.
+func (m *Manager) IdentityFromOAuthRequest(ctx context.Context, r *http.Request) (Identity, error) {
+	tok := bearerToken(r)
+	if !isOAuthAccessToken(tok) {
 		return Identity{}, ErrInvalidSession
 	}
-	go func() {
-		_ = m.q.UpdateAPIKeyLastUsed(context.Background(), key.ID)
-	}()
-	return Identity{UserID: key.UserID.String(), ViaAPIKey: true, Write: ScopesCanWrite(key.Scopes), KeyName: key.Name}, nil
+	return m.identityFromOAuthToken(ctx, tok)
 }
 
 // AccessCookie builds the Set-Cookie value for an access token.

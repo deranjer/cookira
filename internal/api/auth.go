@@ -191,9 +191,6 @@ func (s *Server) registerAuthRoutes() {
 		Tags:        []string{"Auth"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, input *updateMeInput) (*userOutput, error) {
-		if auth.ViaAPIKey(ctx) {
-			return nil, huma.Error403Forbidden("change your profile from a signed-in session")
-		}
 		user, err := s.currentUser(ctx)
 		if err != nil {
 			return nil, err
@@ -255,12 +252,8 @@ func (s *Server) currentUser(ctx context.Context) (db.User, error) {
 	return user, nil
 }
 
-// requireAdmin returns the caller if they are an admin using a signed-in
-// session (not an API key or connector token).
+// requireAdmin returns the caller if they are an admin.
 func (s *Server) requireAdmin(ctx context.Context) (db.User, error) {
-	if auth.ViaAPIKey(ctx) {
-		return db.User{}, huma.Error403Forbidden("manage users from a signed-in session")
-	}
 	me, err := s.currentUser(ctx)
 	if err != nil {
 		return db.User{}, err

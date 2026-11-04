@@ -143,9 +143,6 @@ func (s *Server) registerRecipeRoutes() {
 		Tags:        []string{"Recipes"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *createRecipeInput) (*recipeOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		r, err := s.svc.Create(ctx, in.Body.fields())
 		if err != nil {
 			return nil, mapErr(err)
@@ -176,9 +173,6 @@ func (s *Server) registerRecipeRoutes() {
 		Tags:        []string{"Recipes"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *updateRecipeInput) (*recipeOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		r, err := s.svc.Update(ctx, in.Ref, in.Body.fields())
 		if err != nil {
 			return nil, mapErr(err)
@@ -194,9 +188,6 @@ func (s *Server) registerRecipeRoutes() {
 		Tags:        []string{"Recipes"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *refInput) (*statusOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		if _, err := s.svc.Delete(ctx, in.Ref); err != nil {
 			return nil, mapErr(err)
 		}
@@ -226,9 +217,6 @@ func (s *Server) registerRecipeRoutes() {
 		Tags:        []string{"Recipes"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *restoreInput) (*recipeOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		r, err := s.svc.Restore(ctx, in.Ref, in.Revision)
 		if err != nil {
 			return nil, mapErr(err)
@@ -268,9 +256,6 @@ func (s *Server) registerShareRoutes() {
 		Tags:        []string{"Sharing"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *createShareInput) (*shareOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		sh, err := s.svc.CreateShare(ctx, in.Ref, in.Body.ExpiresInDays)
 		if err != nil {
 			return nil, mapErr(err)
@@ -301,9 +286,6 @@ func (s *Server) registerShareRoutes() {
 		Tags:        []string{"Sharing"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, in *revokeShareInput) (*statusOutput, error) {
-		if err := requireWrite(ctx); err != nil {
-			return nil, err
-		}
 		if err := s.svc.RevokeShare(ctx, in.Ref, in.ShareID); err != nil {
 			return nil, mapErr(err)
 		}
@@ -350,10 +332,6 @@ func (s *Server) registerImageRoutes(r *chi.Mux) {
 	})
 
 	r.With(auth.RequireAuth(s.mgr)).Put("/api/v1/recipes/{ref}/image", func(w http.ResponseWriter, req *http.Request) {
-		if !auth.CanWrite(req.Context()) {
-			writeProblem(w, http.StatusForbidden, "this API key is read-only")
-			return
-		}
 		req.Body = http.MaxBytesReader(w, req.Body, recipes.MaxImageBytes+1<<20)
 		file, _, err := req.FormFile("file")
 		if err != nil {
@@ -375,10 +353,6 @@ func (s *Server) registerImageRoutes(r *chi.Mux) {
 	})
 
 	r.With(auth.RequireAuth(s.mgr)).Delete("/api/v1/recipes/{ref}/image", func(w http.ResponseWriter, req *http.Request) {
-		if !auth.CanWrite(req.Context()) {
-			writeProblem(w, http.StatusForbidden, "this API key is read-only")
-			return
-		}
 		if err := s.svc.RemoveImage(req.Context(), chi.URLParam(req, "ref")); err != nil {
 			writeServiceError(w, err)
 			return

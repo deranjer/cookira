@@ -1,8 +1,6 @@
 import type {
-  ApiKey,
   OAuthAuthorizeInfo,
   OAuthConnection,
-  NewApiKey,
   Recipe,
   RecipeInput,
   RecipeList,
@@ -112,13 +110,6 @@ export const oauthApi = {
   authorizeInfo: (query: string) => request<OAuthAuthorizeInfo>(`/oauth/authorize/info?${query}`, undefined, ''),
   decide: (body: Record<string, unknown>) =>
     request<{ redirectUrl: string }>('/oauth/authorize/decision', { method: 'POST', body: json(body) }, ''),
-}
-
-export const apiKeysApi = {
-  list: () => request<ApiKey[]>('/api-keys'),
-  create: (name: string, readOnly: boolean) =>
-    request<NewApiKey>('/api-keys', { method: 'POST', body: json({ name, readOnly }) }),
-  delete: (id: string) => request<{ status: string }>(`/api-keys/${id}`, { method: 'DELETE' }),
 }
 
 export interface RecipeFilters {

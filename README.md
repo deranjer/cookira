@@ -10,7 +10,7 @@ site; built on the same stack as Loopira.
   tags, timings, notes (markdown), a header photo.
 - **Agent-friendly.** `/mcp` exposes tools to search, create, patch, and share
   recipes. Agents create **drafts**; a person publishes. Every change (web or
-  agent, with the API key name) is recorded and can be restored.
+  agent, with the connected app's name) is recorded and can be restored.
 - **One binary + Postgres 18.** The React UI is embedded in the Go binary;
   migrations run on startup.
 
@@ -82,57 +82,53 @@ TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5434/cookira_test?sslm
 
 ## Connecting agents
 
-Create an API key in **Settings → API keys** (read-only or read-write), then:
+Agents connect to `/mcp` with **OAuth only**; there are no API keys. The flow is
+the standard MCP one (the same shape as Vigara's): the client discovers the
+authorization server, registers itself, sends you to Cookira's sign-in and
+consent page, and you choose **read-only** or **read-write**. The connection
+(listed in **Settings → Connected apps**, revocable there) acts as you, and
+recipe history shows `oauth:<app name>` as the actor.
 
 ```sh
-# Claude Code
-claude mcp add --transport http cookira http://localhost:8080/mcp \
-  --header "Authorization: Bearer <key>"
+# Claude Code, then run /mcp inside it and choose cookira to sign in
+claude mcp add --transport http cookira http://localhost:8080/mcp
 ```
 
 ```toml
-# Codex: ~/.codex/config.toml  (export COOKIRA_API_KEY=<key>)
+# Codex: ~/.codex/config.toml, then: codex mcp login cookira
 [mcp_servers.cookira]
 url = "http://localhost:8080/mcp"
-bearer_token_env_var = "COOKIRA_API_KEY"
 ```
 
-Claude desktop's config only speaks stdio, so use the `mcp-remote` bridge; the
-exact JSON is shown in Settings. Photos are resized on upload (a 1600px full-size and a 640px thumbnail, both JPEG,
-EXIF-rotated and metadata-stripped). `set_recipe_image` takes a public image URL
-(private/local addresses are refused) or base64 data.
+For claude.ai, Claude desktop and ChatGPT, add a custom connector / MCP server
+with URL `https://<your-host>/mcp`, choose **OAuth** and leave client ID and
+secret empty (the client registers itself). Hosted apps can't reach
+`localhost`, so Cookira must be on **public HTTPS** with `PUBLIC_URL` set to
+that address (it becomes the OAuth issuer). Local clients such as Claude Code
+and Codex also work against `http://localhost`.
 
-### ChatGPT and other OAuth-only clients
+Photos are resized on upload (a 1600px full-size and a 640px thumbnail, both
+JPEG, EXIF-rotated and metadata-stripped). `set_recipe_image` takes a public
+image URL (private/local addresses are refused) or base64 data.
 
-Codex does **not** require OAuth: it supports Bearer API keys as configured
-above ([official MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)).
-ChatGPT's custom MCP connection supports OAuth, no authentication, or mixed
-OAuth/anonymous access, without a custom API-key input
-([official connection documentation](https://developers.openai.com/api/docs/guides/custom-mcp-server)).
-For private Cookira access in ChatGPT, use OAuth.
+### How the OAuth server works
 
-ChatGPT's custom MCP servers (and claude.ai connectors) can't send a Bearer key,
-so Cookira is also an OAuth 2.1 authorization server. Bearer API keys keep
-working side by side.
+Credentials don't cross surfaces: `/mcp` accepts **only** OAuth access tokens
+(a browser session or login token is rejected there), and the REST API accepts
+only people's logins (an OAuth token is rejected there, so a connected app can't
+manage users or approve more apps).
 
-1. Cookira must be reachable over **public HTTPS** (set `PUBLIC_URL` to that
-   address; it becomes the OAuth issuer). ChatGPT can't reach `localhost`.
-2. In ChatGPT, add a custom MCP server with URL `https://<your-host>/mcp` and
-   authentication **OAuth** (leave client ID/secret empty).
-3. ChatGPT registers itself, opens Cookira's sign-in and consent page, and you
-   choose **read-only** or **read-write**. The connection (listed in
-   **Settings → Connected apps**, revocable there) acts as you; recipe history
-   shows `key:oauth:<app name>` as the actor.
-
-What is implemented: discovery (`/.well-known/oauth-protected-resource[/mcp]`,
+Implemented: discovery (`/.well-known/oauth-protected-resource[/mcp]`,
 `/.well-known/oauth-authorization-server`), dynamic client registration
-(`POST /oauth/register`, public clients only), authorization code + PKCE (S256
-required), `POST /oauth/token` (authorization_code and rotating refresh tokens,
-so connections survive `offline_access`-style long use; access tokens last 1
-hour, refresh tokens 90 days), and `POST /oauth/revoke`. `/mcp` answers 401 with
-a `WWW-Authenticate: Bearer resource_metadata=...` challenge. Tokens, codes and
-refresh tokens are stored only as SHA-256 hashes. Client ID Metadata Documents
-are not supported (clients fall back to dynamic registration).
+(`POST /oauth/register`, public clients only, https or loopback redirects),
+authorization code + PKCE (S256 required), `POST /oauth/token`
+(authorization_code and rotating refresh tokens; access tokens last 1 hour,
+refresh tokens 90 days) and `POST /oauth/revoke`. `/mcp` answers 401 with a
+`WWW-Authenticate: Bearer resource_metadata=...` challenge. Tokens, codes and
+refresh tokens are stored only as SHA-256 hashes. Register, token and revoke
+are rate limited per connection IP (forwarding headers are ignored, so clients
+behind a reverse proxy share its budget). Client ID Metadata Documents are not
+supported (clients fall back to dynamic registration).
 
 To exercise the flow by hand: register a client, sign in, POST the consent
 decision (`/oauth/authorize/decision`, what the React page does) with a PKCE
@@ -151,7 +147,7 @@ cmd/server/            entrypoint
 internal/recipes/      domain layer: validation, revisions, shares, images (REST and MCP both use it)
 internal/api/          huma/chi routes (REST, images, public share view, /mcp mount)
 internal/mcpserver/    MCP tools
-internal/auth/         JWT + refresh tokens, bcrypt, Bearer API keys and OAuth access tokens
+internal/auth/         login JWTs + refresh tokens, bcrypt, OAuth access tokens
 internal/oauth/        OAuth 2.1 authorization server (discovery, registration, token, consent API)
 internal/db/           migrations (goose), queries (sqlc), generated code
 internal/storage/      image storage interface (local disk)

@@ -2,8 +2,11 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -65,7 +68,7 @@ func GenerateRefreshToken() (plaintext, hash string) {
 		panic(err)
 	}
 	plaintext = loginRefreshPrefix + base64.RawURLEncoding.EncodeToString(b)
-	return plaintext, HashAPIKey(plaintext)
+	return plaintext, HashToken(plaintext)
 }
 
 // GenerateInviteToken returns a new random invite token and its stored hash.
@@ -75,5 +78,19 @@ func GenerateInviteToken() (plaintext, hash string) {
 		panic(err)
 	}
 	plaintext = base64.RawURLEncoding.EncodeToString(b)
-	return plaintext, HashAPIKey(plaintext)
+	return plaintext, HashToken(plaintext)
+}
+
+// HashToken is the stored form of every random bearer secret (refresh,
+// invite and OAuth tokens). They are high-entropy, not user-chosen, so a fast
+// hash is appropriate: there is no low-entropy input to slow down, unlike
+// bcrypt for login passwords.
+func HashToken(plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(sum[:])
+}
+
+// ScopesCanWrite reports whether an OAuth scope list includes write access.
+func ScopesCanWrite(scopes []string) bool {
+	return slices.Contains(scopes, "write")
 }

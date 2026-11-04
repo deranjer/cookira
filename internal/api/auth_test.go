@@ -287,4 +287,4 @@ func updateProfile(id pgtype.UUID, name, role string) db.UpdateUserProfileParams
 	return db.UpdateUserProfileParams{ID: id, Name: name, Role: role}
 }
 
-func hashForTest(s string) string { return auth.HashAPIKey(s) }
+func hashForTest(s string) string { return auth.HashToken(s) }

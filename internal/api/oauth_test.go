@@ -247,7 +247,7 @@ func TestOAuthFlowReadWrite(t *testing.T) {
 		t.Fatalf("list: %v %v", items, err)
 	}
 	revs, err := e.srv.svc.Revisions(context.Background(), items[0].ID)
-	if err != nil || len(revs) == 0 || revs[0].Actor != "key:oauth:ChatGPT" {
+	if err != nil || len(revs) == 0 || revs[0].Actor != "oauth:ChatGPT" {
 		t.Errorf("history = %+v, err %v", revs, err)
 	}
 
@@ -276,7 +276,7 @@ func TestOAuthFlowReadWrite(t *testing.T) {
 		t.Fatalf("connections = %s", rec.Body.String())
 	}
 	delPath := listPath + "/" + conns[0]["id"].(string)
-	if rec := e.do("DELETE", delPath, "", "", bearer(newAccess)); rec.Code != http.StatusForbidden {
+	if rec := e.do("DELETE", delPath, "", "", bearer(newAccess)); rec.Code != http.StatusUnauthorized {
 		t.Errorf("delete via oauth token = %d", rec.Code)
 	}
 	if rec := e.do("DELETE", delPath, "", "", e.withSession); rec.Code != http.StatusOK {
@@ -333,22 +333,5 @@ func TestOAuthRejectsBadRequests(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", name, rec.Code)
 		}
-	}
-
-	// An API key (not a browser session) may not approve connections.
-	plain, hash := auth.GenerateAPIKey()
-	if _, err := e.srv.q.CreateAPIKey(context.Background(), db.CreateAPIKeyParams{
-		UserID: e.userID, Name: "k", KeyHash: hash, Scopes: auth.ScopesForWrite(true),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	rec := e.do("POST", "/oauth/authorize/decision", "application/json", e.authorizeBody(clientID, func(map[string]any) {}), bearer(plain))
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("approve via API key = %d", rec.Code)
-	}
-
-	// Bearer API keys keep working on /mcp alongside OAuth.
-	if rec := e.mcp(plain, mcpInitialize); rec.Code != http.StatusOK {
-		t.Errorf("API key on /mcp = %d", rec.Code)
 	}
 }

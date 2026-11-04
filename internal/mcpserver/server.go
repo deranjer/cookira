@@ -1,7 +1,8 @@
 // Package mcpserver exposes Cookira's recipes to AI agents over the Model
 // Context Protocol. It is mounted as a plain http.Handler at /mcp (see
-// internal/api/router.go) behind the same auth as the REST API: a Bearer
-// API key. Every tool goes through recipes.Service, the same layer the REST
+// internal/api/router.go) behind OAuth: agents connect through the consent
+// flow in internal/oauth and send the resulting Bearer access token. Every
+// tool goes through recipes.Service, the same layer the REST
 // API uses, so the two surfaces never drift apart.
 //
 // Agents are expected to create recipes as drafts; a human publishes them.
@@ -66,36 +67,36 @@ func New(svc *recipes.Service) *mcp.Server {
 	addTool(server, &mcp.Tool{
 		Name: "create_recipe",
 		Description: "Create a recipe (title is required). It is saved as a draft unless status is 'published'. " +
-			"Requires a read-write API key.",
+			"Requires read-write access.",
 	}, s.createRecipe)
 
 	addTool(server, &mcp.Tool{
 		Name: "update_recipe",
 		Description: "Update a recipe. Only the fields you supply change; omit the rest. " +
 			"tags, ingredients and steps REPLACE the whole list when supplied (use add_recipe_step / " +
-			"add_recipe_ingredient to append). Requires a read-write API key.",
+			"add_recipe_ingredient to append). Requires read-write access.",
 	}, s.updateRecipe)
 
 	addTool(server, &mcp.Tool{
 		Name:        "add_recipe_step",
-		Description: "Insert one step into a recipe at a 1-based position (omit or 0 to append). Requires a read-write API key.",
+		Description: "Insert one step into a recipe at a 1-based position (omit or 0 to append). Requires read-write access.",
 	}, s.addStep)
 
 	addTool(server, &mcp.Tool{
 		Name:        "add_recipe_ingredient",
-		Description: "Append one ingredient line to a named ingredient group, creating the group if needed. Requires a read-write API key.",
+		Description: "Append one ingredient line to a named ingredient group, creating the group if needed. Requires read-write access.",
 	}, s.addIngredient)
 
 	addTool(server, &mcp.Tool{
 		Name: "delete_recipe",
 		Description: "Delete a recipe. It is soft-deleted and can be brought back with restore_recipe_revision " +
-			"using the recipe's id. Requires a read-write API key.",
+			"using the recipe's id. Requires read-write access.",
 	}, s.deleteRecipe)
 
 	addTool(server, &mcp.Tool{
 		Name: "restore_recipe_revision",
 		Description: "Restore a recipe's content from an earlier revision number (see get_recipe_history). " +
-			"Also un-deletes a deleted recipe (pass its id). Requires a read-write API key.",
+			"Also un-deletes a deleted recipe (pass its id). Requires read-write access.",
 	}, s.restoreRevision)
 
 	addTool(server, &mcp.Tool{
@@ -103,13 +104,13 @@ func New(svc *recipes.Service) *mcp.Server {
 		Description: "Set (or replace) a recipe's header photo, from an image URL or base64 data. " +
 			"JPEG, PNG or WebP up to 10 MB; it is resized automatically. Give exactly one of imageUrl " +
 			"(a public http/https link; private and local addresses are refused) or imageBase64. " +
-			"Requires a read-write API key.",
+			"Requires read-write access.",
 	}, s.setImage)
 
 	addTool(server, &mcp.Tool{
 		Name: "create_share_link",
 		Description: "Create a view-only public link to a recipe that works without logging in. " +
-			"Only do this when the user asks. Requires a read-write API key.",
+			"Only do this when the user asks. Requires read-write access.",
 	}, s.createShare)
 
 	addTool(server, &mcp.Tool{
@@ -119,7 +120,7 @@ func New(svc *recipes.Service) *mcp.Server {
 
 	addTool(server, &mcp.Tool{
 		Name:        "revoke_share_link",
-		Description: "Revoke a share link by its id (from list_share_links). Requires a read-write API key.",
+		Description: "Revoke a share link by its id (from list_share_links). Requires read-write access.",
 	}, s.revokeShare)
 
 	return server
@@ -153,7 +154,7 @@ func errorResult(format string, args ...any) *mcp.CallToolResult {
 	}
 }
 
-var errNoWrite = errorResult("this API key is read-only and can't make changes")
+var errNoWrite = errorResult("this connection was approved as read-only and can't make changes")
 
 // fail turns a service error into a tool result. Domain errors are shown to
 // the agent verbatim; anything else is an internal error.

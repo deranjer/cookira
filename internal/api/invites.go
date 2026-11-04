@@ -193,7 +193,7 @@ func (s *Server) registerInviteRoutes() {
 		Summary:     "Check an invite link before accepting it (public)",
 		Tags:        []string{"Invites"},
 	}, func(ctx context.Context, input *inviteTokenInput) (*inviteInfoOutput, error) {
-		inv, err := s.q.GetInviteByHash(ctx, auth.HashAPIKey(input.Token))
+		inv, err := s.q.GetInviteByHash(ctx, auth.HashToken(input.Token))
 		if err != nil || inv.UsedAt.Valid || inv.ExpiresAt.Time.Before(time.Now()) {
 			return nil, huma.Error404NotFound("this invite link is invalid or has expired")
 		}
@@ -230,7 +230,7 @@ func (s *Server) acceptInvite(ctx context.Context, input *acceptInviteInput) (db
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
 
-	inv, err := q.ClaimInvite(ctx, auth.HashAPIKey(input.Token))
+	inv, err := q.ClaimInvite(ctx, auth.HashToken(input.Token))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.User{}, huma.Error404NotFound("this invite link is invalid or has expired")
 	}

@@ -67,9 +67,6 @@ func (s *Server) registerOAuthConnectionRoutes() {
 		Tags:        []string{"OAuth"},
 		Middlewares: s.protected(),
 	}, func(ctx context.Context, input *deleteOAuthConnectionInput) (*statusOutput, error) {
-		if auth.ViaAPIKey(ctx) {
-			return nil, huma.Error403Forbidden("manage connections from a signed-in session")
-		}
 		userIDStr, _ := auth.UserID(ctx)
 		userID, err := mustUUID(userIDStr)
 		if err != nil {

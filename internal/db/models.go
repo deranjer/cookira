@@ -8,16 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type ApiKey struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	Name       string             `json:"name"`
-	KeyHash    string             `json:"key_hash"`
-	Scopes     []string           `json:"scopes"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
-}
-
 type Invite struct {
 	ID        pgtype.UUID        `json:"id"`
 	TokenHash string             `json:"token_hash"`

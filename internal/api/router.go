@@ -70,7 +70,6 @@ func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string, jwtSecret [
 	s.registerAuthRoutes()
 	s.registerUserRoutes()
 	s.registerInviteRoutes()
-	s.registerAPIKeyRoutes()
 	s.registerRecipeRoutes()
 	s.registerShareRoutes()
 	s.registerPublicRoutes()
@@ -83,30 +82,22 @@ func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string, jwtSecret [
 }
 
 // protected returns the huma middleware chain that guards operations
-// behind a valid session or API key.
+// behind a person's login.
 func (s *Server) protected() huma.Middlewares {
 	return huma.Middlewares{requireAuth(s.humaAPI, s.mgr)}
 }
 
-// requireWrite rejects read-only API keys. Browser sessions always write.
-func requireWrite(ctx context.Context) error {
-	if !auth.CanWrite(ctx) {
-		return huma.Error403Forbidden("this API key is read-only")
-	}
-	return nil
-}
-
-// registerMCPRoute mounts the MCP server at /mcp, behind the same auth as
-// the REST API: a Bearer API key or OAuth access token for agents. An
-// unauthenticated request gets a 401 pointing at the OAuth resource metadata. Stateless because every
-// request is independently authenticated.
+// registerMCPRoute mounts the MCP server at /mcp. It accepts only OAuth access
+// tokens (agents connect through the OAuth consent flow); an unauthenticated
+// request gets a 401 pointing at the OAuth resource metadata. Stateless
+// because every request is independently authenticated.
 func (s *Server) registerMCPRoute(r *chi.Mux) {
 	mcpSrv := mcpserver.New(s.svc)
 	handler := mcpsdk.NewStreamableHTTPHandler(
 		func(*http.Request) *mcpsdk.Server { return mcpSrv },
 		&mcpsdk.StreamableHTTPOptions{Stateless: true},
 	)
-	r.With(auth.RequireAuth(s.mgr, s.oauth.ResourceMetadataURL())).Handle("/mcp", handler)
+	r.With(auth.RequireOAuth(s.mgr, s.oauth.ResourceMetadataURL())).Handle("/mcp", handler)
 }
 
 type healthBody struct {
