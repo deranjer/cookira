@@ -12,14 +12,34 @@ CREATE TABLE users (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE sessions (
+-- Logins are short-lived JWT access tokens plus rotating opaque refresh
+-- tokens. Refresh tokens are random and stored only as a sha256 hash; each is
+-- single-use: redeeming one revokes it and issues the next.
+CREATE TABLE refresh_tokens (
     id         uuid PRIMARY KEY DEFAULT uuidv7(),
     user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash text NOT NULL UNIQUE,
     created_at timestamptz NOT NULL DEFAULT now(),
-    expires_at timestamptz NOT NULL
+    expires_at timestamptz NOT NULL,
+    revoked_at timestamptz
 );
 
-CREATE INDEX idx_sessions_user ON sessions (user_id);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id);
+
+-- Invite links: an admin creates one, shares the link, and the invitee picks
+-- their own name and password. Stored hashed like every other token. An
+-- invite may be bound to an email, and always carries the role to grant.
+CREATE TABLE invites (
+    id         uuid PRIMARY KEY DEFAULT uuidv7(),
+    token_hash text NOT NULL UNIQUE,
+    email      text,
+    role       text NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    used_at    timestamptz,
+    used_by    uuid REFERENCES users(id) ON DELETE SET NULL
+);
 
 CREATE TABLE api_keys (
     id           uuid PRIMARY KEY DEFAULT uuidv7(),
@@ -167,5 +187,6 @@ DROP TRIGGER IF EXISTS recipes_search_trigger ON recipes;
 DROP FUNCTION IF EXISTS recipes_search_update();
 DROP TABLE IF EXISTS recipes;
 DROP TABLE IF EXISTS api_keys;
-DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS invites;
+DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
