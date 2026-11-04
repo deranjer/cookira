@@ -38,7 +38,7 @@ self-hosted Go app, built on the Loopira stack (`G:\Programming\linear-replaceme
 |---|---|---|
 | chi + huma REST/OpenAPI | `internal/api` | copy pattern |
 | Postgres, pgx, goose migrations, sqlc | `internal/db`, `sqlc.yaml` | copy pattern |
-| Auth: sessions, bcrypt, **Bearer API keys (read-only / read-write)** | `internal/auth` | copy nearly verbatim |
+| Auth: sessions, bcrypt, ~~Bearer API keys~~ (now login JWTs + OAuth only) | `internal/auth` | copy nearly verbatim |
 | MCP server (`modelcontextprotocol/go-sdk`, Streamable HTTP, stateless, mounted `/mcp` behind `RequireAuth`) | `internal/mcpserver`, `registerMCPRoute` | copy `addTool` helper + route wiring |
 | Disk `storage.Store` interface for uploads | `internal/storage` | use for recipe photos |
 | Embedded React/Vite SPA served by the binary | `web/`, `internal/webapp` | copy build pipeline |
@@ -50,12 +50,12 @@ self-hosted Go app, built on the Loopira stack (`G:\Programming\linear-replaceme
 1. **Source of truth = Postgres**, not git markdown. Agents writing through MCP shouldn't have to commit/push/wait for a Hugo build. No import/export tooling.
 2. **Structured recipe model** instead of free-form markdown. Ingredients and steps as rows/JSON make the MCP tools reliable (an agent can "scale to 6 servings", "swap butter for oil", "add a step after 3") and make validation possible. Notes/footnotes stay as markdown text.
 3. **New standalone repo/app** in `G:\Programming\cookbooks` (module `github.com/deranjer/cookbooks`), copying Loopira's scaffolding rather than importing it. Loopira is an app, not a library.
-4. **Private by default, multi-user household**: login required for everything. A recipe can get a revocable **share link** (`/s/{token}`, unguessable, view-only, optional expiry; a `recipe_shares` table) that renders without login. API keys are read-only or read-write as in Loopira.
+4. **Private by default, multi-user household**: login required for everything. A recipe can get a revocable **share link** (`/s/{token}`, unguessable, view-only, optional expiry; a `recipe_shares` table) that renders without login. Agents authenticate over OAuth only (read-only or read-write, chosen at consent); there are no API keys.
 5. **Frontend**: React + Vite + Tailwind + TanStack Query as in Loopira. Organize the backend by domain package (`internal/recipes`, later `internal/mealplan`, `internal/pantry`…) and keep auth/db/storage/mcp shared, so new food features add a package and a tool group rather than touching the core.
 
 ## Data model (migration `00001_init.sql`)
 
-- `users`, `sessions`, `api_keys` — straight from Loopira.
+- `users`, `refresh_tokens`, `invites`, and the OAuth tables (no API keys; agents use OAuth).
 - `recipes`: `id uuid, slug unique, title, tagline, author, servings, prep_minutes, cook_minutes, calories, is_cooked bool (the Hugo `cook` flag), source_url, notes_md, status ('draft'|'published'), image_key, created_at, updated_at`
 - `recipe_ingredient_groups`: `recipe_id, position, name` (the `####` subheadings)
 - `recipe_ingredients`: `group_id, position, text` (keep as display text; optional parsed `quantity, unit, item` columns later for scaling — start with text, add parsing as a follow-up)
@@ -66,18 +66,18 @@ self-hosted Go app, built on the Loopira stack (`G:\Programming\linear-replaceme
 
 ## MCP tool surface (`internal/mcpserver`)
 
-Read tools (any key): `list_recipes` (compact summaries; filter by tag/text/status, limit/offset), `get_recipe` (id or slug; full structured), `search_recipes`, `list_tags`, `get_recipe_history`, `create_share_link`, `revoke_share_link`.
+Read tools (any connection): `list_recipes` (compact summaries; filter by tag/text/status, limit/offset), `get_recipe` (id or slug; full structured), `search_recipes`, `list_tags`, `get_recipe_history`, `create_share_link`, `revoke_share_link`.
 
-Write tools (read-write key only): `create_recipe`, `update_recipe` (patch semantics — only supplied fields change), `set_ingredients` / `set_steps` (replace a list), `add_step`, `add_ingredient`, `set_recipe_tags`, `set_recipe_status` (draft ↔ published), `delete_recipe` (soft delete / archived), `restore_revision`, `import_recipe_from_url` (later: extracts schema.org/Recipe JSON-LD, creates a *draft*).
+Write tools (read-write connection only): `create_recipe`, `update_recipe` (patch semantics — only supplied fields change), `set_ingredients` / `set_steps` (replace a list), `add_step`, `add_ingredient`, `set_recipe_tags`, `set_recipe_status` (draft ↔ published), `delete_recipe` (soft delete / archived), `restore_revision`, `import_recipe_from_url` (later: extracts schema.org/Recipe JSON-LD, creates a *draft*).
 
-Conventions carried over from Loopira: tools return compact JSON text only (`addTool` wrapper, no duplicated structured content); descriptions state "Requires a read-write API key"; **agents create as `draft` by default** and a human publishes — this is the main guardrail.
+Conventions carried over from Loopira: tools return compact JSON text only (`addTool` wrapper, no duplicated structured content); descriptions state "Requires read-write access"; **agents create as `draft` by default** and a human publishes — this is the main guardrail.
 
 Also expose recipes as MCP **resources** (`recipe://{slug}`) and a **prompt** ("add a recipe from this text") so clients that support them get a nicer flow.
 
 ## REST + web UI
 
 - REST under `/api/v1/recipes…` (huma), generated OpenAPI; the MCP tools and REST share the same sqlc queries and DTO shaping, as Loopira does, so they can't drift.
-- UI pages: recipe list (tag filter + search), recipe detail (ingredients, steps, metadata, **print view** and servings scaler), editor (structured form + drafts), tag index, API-key management, login. Photo upload via `storage.Store`, resized to webp on upload.
+- UI pages: recipe list (tag filter + search), recipe detail (ingredients, steps, metadata, **print view** and servings scaler), editor (structured form + drafts), tag index, connected-apps management, login. Photo upload via `storage.Store`, resized to webp on upload.
 - Keep the current look: Bulma-ish layout, header image, stats table (prep/cook/total/calories/servings).
 
 ## Migration of existing content
@@ -87,10 +87,10 @@ None. No importer and no exporter. The old `content/*.md` folder gets handed to 
 ## Hosting / deployment
 
 - Same shape as Loopira: one app container + Postgres 18 + mounted volume for images; migrations auto-run at boot; `/api/v1/health`.
-- Reverse proxy (whatever fronts `recipes.derajnet.duckdns.org` today) terminates TLS; MCP at `https://recipes…/mcp` with `Authorization: Bearer <key>`.
+- Reverse proxy (whatever fronts `recipes.derajnet.duckdns.org` today) terminates TLS; MCP at `https://recipes…/mcp`, authenticated by OAuth (clients register and get approved on the consent page).
 - Replace Drone's Hugo build with a Drone (or GitHub Actions) pipeline: `go test` → docker build → push → deploy. Nightly `pg_dump` + image dir backup, (Loopira's in-process scheduler can run it).
-- MCP security to settle before exposing publicly: HTTPS only, per-key rate limit, Origin validation on `/mcp`, key scoping (read-only vs read-write), revocation UI, and request logging that records the key name on every revision.
-- If you later want claude.ai / ChatGPT connectors (remote MCP), they expect OAuth rather than static Bearer keys; the MCP SDK has auth helpers. Out of scope for v1; Bearer works for Claude Code, Cursor, and your own agents.
+- MCP security to settle before exposing publicly: HTTPS only, per-IP rate limit on the OAuth endpoints (done), Origin validation on `/mcp`, scope at consent (read-only vs read-write, done), revocation UI (done), and the connected app's name recorded on every revision (done).
+- Decided: OAuth only, no static API keys. claude.ai, ChatGPT, Claude Code and Codex all connect through the same OAuth consent flow.
 
 ## Phases
 
@@ -98,7 +98,7 @@ None. No importer and no exporter. The old `content/*.md` folder gets handed to 
 2. **Data + REST** — migration, sqlc queries, recipe CRUD, tags, revisions, search. Unit tests for DTO shaping and revision snapshots.
 3. **MCP server** — `/mcp` route, read tools, then write tools (drafts by default), tests modeled on `internal/mcpserver/tools_test.go`. *Done when an agent can create a recipe from pasted text and edit one step via Claude Code.*
 4. **Share links** — `recipe_shares`, public view route, create/revoke tools and UI.
-5. **Web UI** — list, detail (+print, scaler), editor, photo upload, API keys page.
+5. **Web UI** — list, detail (+print, scaler), editor, photo upload, connected-apps page.
 6. **Deploy + cutover** — host on the server, DNS switch for `recipes.derajnet.duckdns.org`, backups, retire the Hugo pipeline (keep repo archived).
 7. **Later / nice-to-have** — parsed quantities for real scaling, URL import polish, meal-plan/shopping-list tools, OAuth for remote connectors.
 
@@ -107,7 +107,7 @@ Phases 3 and 4 can run in parallel once phase 2 lands; 5 can start after phase 2
 ## Risks
 
 - **Free-text ingredients limit scaling/substitution tools** — mitigated by adding parsed columns later without changing the tool API.
-- **Agent writes bad data** — drafts-by-default, revision history with restore, read-only keys for most agents.
+- **Agent writes bad data** — drafts-by-default, revision history with restore, read-only connections for most agents.
 - **Complexity vs. the Hugo site's "just markdown" simplicity** — if you'd rather skip a custom UI, a thin MCP + REST backend with a minimal server-rendered UI is a viable smaller v1.
 
 ## Open questions for you
@@ -115,5 +115,5 @@ Phases 3 and 4 can run in parallel once phase 2 lands; 5 can start after phase 2
 Decided: Postgres 18; private by default with revocable **share links** (view-only, per recipe); React SPA, structured so the app can grow into other food features (meal plans, pantry, shopping lists); no import/export; clients are Claude desktop and Codex desktop.
 
 Still open:
-1. **Client auth**: Codex takes a streamable-HTTP MCP URL with a bearer token. Claude desktop's remote connectors expect OAuth, while a Bearer key works through a local bridge (`mcp-remote` with a header). Pick: bridge for v1, or build a small OAuth layer (single-user, so it can be minimal)?
+1. **Client auth**: resolved. OAuth only (see README, Connecting agents).
 2. **Name / module path** (see name options).

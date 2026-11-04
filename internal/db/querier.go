@@ -20,7 +20,6 @@ type Querier interface {
 	CountOAuthClients(ctx context.Context) (int64, error)
 	CountRecipes(ctx context.Context, arg CountRecipesParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
-	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateOAuthClient(ctx context.Context, arg CreateOAuthClientParams) (OauthClient, error)
 	CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams) error
@@ -31,7 +30,6 @@ type Querier interface {
 	CreateRevision(ctx context.Context, arg CreateRevisionParams) error
 	CreateShare(ctx context.Context, arg CreateShareParams) (RecipeShare, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DeleteAPIKey(ctx context.Context, arg DeleteAPIKeyParams) (int64, error)
 	DeleteExpiredOAuthCodes(ctx context.Context) error
 	DeleteExpiredOAuthTokens(ctx context.Context) error
 	DeleteExpiredRefreshTokens(ctx context.Context) error
@@ -43,7 +41,6 @@ type Querier interface {
 	// Drops clients that registered but never completed a connection.
 	DeleteStaleOAuthClients(ctx context.Context) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
-	GetAPIKeyByHash(ctx context.Context, keyHash string) (GetAPIKeyByHashRow, error)
 	GetInviteByHash(ctx context.Context, tokenHash string) (Invite, error)
 	GetOAuthClient(ctx context.Context, id pgtype.UUID) (OauthClient, error)
 	GetOAuthTokenByHash(ctx context.Context, tokenHash string) (GetOAuthTokenByHashRow, error)
@@ -56,7 +53,6 @@ type Querier interface {
 	GetRevision(ctx context.Context, arg GetRevisionParams) (RecipeRevision, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
-	ListAPIKeysByUser(ctx context.Context, userID pgtype.UUID) ([]ApiKey, error)
 	ListInvites(ctx context.Context) ([]Invite, error)
 	ListOAuthGrantsByUser(ctx context.Context, userID pgtype.UUID) ([]ListOAuthGrantsByUserRow, error)
 	ListRecipes(ctx context.Context, arg ListRecipesParams) ([]ListRecipesRow, error)
@@ -76,7 +72,6 @@ type Querier interface {
 	SetRecipeImage(ctx context.Context, arg SetRecipeImageParams) error
 	SlugExists(ctx context.Context, slug string) (bool, error)
 	TouchOAuthGrant(ctx context.Context, id pgtype.UUID) error
-	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Recipe, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)

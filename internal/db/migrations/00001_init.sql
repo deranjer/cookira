@@ -41,16 +41,6 @@ CREATE TABLE invites (
     used_by    uuid REFERENCES users(id) ON DELETE SET NULL
 );
 
-CREATE TABLE api_keys (
-    id           uuid PRIMARY KEY DEFAULT uuidv7(),
-    user_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name         text NOT NULL,
-    key_hash     text NOT NULL UNIQUE,
-    scopes       text[] NOT NULL DEFAULT '{}',
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    last_used_at timestamptz
-);
-
 -- Recipes. Ingredients and steps are JSONB documents rather than child
 -- tables: they're always read and written as a whole, agents edit them as a
 -- whole, and revisions snapshot them as a whole. Numeric fields use 0 for
@@ -114,7 +104,7 @@ CREATE TABLE recipe_revisions (
     recipe_id  uuid NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
     revision   integer NOT NULL,
     action     text NOT NULL,        -- create | update | delete | restore
-    actor      text NOT NULL,        -- "web" or "key:<api key name>"
+    actor      text NOT NULL,        -- "web" or "oauth:<client name>"
     user_id    uuid REFERENCES users(id) ON DELETE SET NULL,
     snapshot   jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -186,7 +176,6 @@ DROP TABLE IF EXISTS recipe_revisions;
 DROP TRIGGER IF EXISTS recipes_search_trigger ON recipes;
 DROP FUNCTION IF EXISTS recipes_search_update();
 DROP TABLE IF EXISTS recipes;
-DROP TABLE IF EXISTS api_keys;
 DROP TABLE IF EXISTS invites;
 DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
