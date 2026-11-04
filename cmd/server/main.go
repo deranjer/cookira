@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -56,7 +57,12 @@ func run() error {
 	}
 
 	svc := recipes.New(pool, db.New(pool), store, publicURL)
-	srv := api.New(pool, svc, publicURL)
+	secret, err := jwtSecret()
+	if err != nil {
+		return err
+	}
+	srv := api.New(pool, svc, publicURL, secret)
+	go pruneRefreshTokens(ctx, db.New(pool))
 
 	frontend, err := webapp.Handler()
 	if err != nil {
@@ -84,6 +90,41 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// jwtSecret returns the key that signs login access tokens. Set JWT_SECRET
+// (32+ characters) in production. Without it a random key is generated at
+// startup: everything still works, but access tokens die on restart and
+// clients silently refresh, so it is only suitable for development.
+func jwtSecret() ([]byte, error) {
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		if len(s) < 32 {
+			return nil, errors.New("JWT_SECRET must be at least 32 characters")
+		}
+		return []byte(s), nil
+	}
+	slog.Warn("JWT_SECRET is not set; using a random key for this run")
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// pruneRefreshTokens deletes long-expired refresh tokens once a day.
+func pruneRefreshTokens(ctx context.Context, q *db.Queries) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		if err := q.DeleteExpiredRefreshTokens(ctx); err != nil && ctx.Err() == nil {
+			slog.Warn("pruning refresh tokens", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 func getenv(key, fallback string) string {

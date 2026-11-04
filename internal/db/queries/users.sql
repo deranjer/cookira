@@ -14,3 +14,15 @@ RETURNING *;
 
 -- name: CountUsers :one
 SELECT count(*) FROM users;
+
+-- name: UpdateUserProfile :one
+UPDATE users SET name = $2, role = $3 WHERE id = $1 RETURNING *;
+
+-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = $2 WHERE id = $1;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = $1;
+
+-- name: CountAdmins :one
+SELECT count(*) FROM users WHERE role = 'admin';

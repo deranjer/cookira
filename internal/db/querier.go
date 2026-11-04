@@ -11,32 +11,40 @@ import (
 )
 
 type Querier interface {
+	// ClaimInvite atomically marks a usable invite as used; no row means it was
+	// unknown, expired or already redeemed.
+	ClaimInvite(ctx context.Context, tokenHash string) (Invite, error)
 	// Authorization codes are single-use: consuming one deletes it.
 	ConsumeOAuthCode(ctx context.Context, codeHash string) (OauthCode, error)
+	CountAdmins(ctx context.Context) (int64, error)
 	CountOAuthClients(ctx context.Context) (int64, error)
 	CountRecipes(ctx context.Context, arg CountRecipesParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateOAuthClient(ctx context.Context, arg CreateOAuthClientParams) (OauthClient, error)
 	CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams) error
 	CreateOAuthGrant(ctx context.Context, arg CreateOAuthGrantParams) (OauthGrant, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) error
 	CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error)
+	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateRevision(ctx context.Context, arg CreateRevisionParams) error
-	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateShare(ctx context.Context, arg CreateShareParams) (RecipeShare, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAPIKey(ctx context.Context, arg DeleteAPIKeyParams) (int64, error)
 	DeleteExpiredOAuthCodes(ctx context.Context) error
 	DeleteExpiredOAuthTokens(ctx context.Context) error
+	DeleteExpiredRefreshTokens(ctx context.Context) error
+	DeleteInvite(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteOAuthGrant(ctx context.Context, arg DeleteOAuthGrantParams) (int64, error)
 	DeleteOAuthGrantByID(ctx context.Context, id pgtype.UUID) error
 	DeleteOAuthGrantsForClientUser(ctx context.Context, arg DeleteOAuthGrantsForClientUserParams) error
 	DeleteOAuthToken(ctx context.Context, id pgtype.UUID) error
-	DeleteSession(ctx context.Context, id pgtype.UUID) error
 	// Drops clients that registered but never completed a connection.
 	DeleteStaleOAuthClients(ctx context.Context) error
+	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (GetAPIKeyByHashRow, error)
+	GetInviteByHash(ctx context.Context, tokenHash string) (Invite, error)
 	GetOAuthClient(ctx context.Context, id pgtype.UUID) (OauthClient, error)
 	GetOAuthTokenByHash(ctx context.Context, tokenHash string) (GetOAuthTokenByHashRow, error)
 	GetRecipe(ctx context.Context, id pgtype.UUID) (Recipe, error)
@@ -44,11 +52,12 @@ type Querier interface {
 	GetRecipeByShareToken(ctx context.Context, token string) (Recipe, error)
 	GetRecipeBySlug(ctx context.Context, slug string) (Recipe, error)
 	GetRecipeForUpdate(ctx context.Context, id pgtype.UUID) (Recipe, error)
+	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetRevision(ctx context.Context, arg GetRevisionParams) (RecipeRevision, error)
-	GetSession(ctx context.Context, id pgtype.UUID) (Session, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	ListAPIKeysByUser(ctx context.Context, userID pgtype.UUID) ([]ApiKey, error)
+	ListInvites(ctx context.Context) ([]Invite, error)
 	ListOAuthGrantsByUser(ctx context.Context, userID pgtype.UUID) ([]ListOAuthGrantsByUserRow, error)
 	ListRecipes(ctx context.Context, arg ListRecipesParams) ([]ListRecipesRow, error)
 	ListRevisions(ctx context.Context, recipeID pgtype.UUID) ([]ListRevisionsRow, error)
@@ -56,12 +65,21 @@ type Querier interface {
 	ListTags(ctx context.Context) ([]ListTagsRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	NextRevision(ctx context.Context, recipeID pgtype.UUID) (int32, error)
+	RevokeAllRefreshTokensForUser(ctx context.Context, userID pgtype.UUID) error
+	RevokeOtherRefreshTokensForUser(ctx context.Context, arg RevokeOtherRefreshTokensForUserParams) error
+	// RevokeRefreshToken is a compare-and-swap: only the caller that flips
+	// revoked_at from NULL wins, so two racing redemptions can't both succeed.
+	RevokeRefreshToken(ctx context.Context, id pgtype.UUID) (int64, error)
+	RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	RevokeShare(ctx context.Context, arg RevokeShareParams) (int64, error)
+	SetInviteUsedBy(ctx context.Context, arg SetInviteUsedByParams) error
 	SetRecipeImage(ctx context.Context, arg SetRecipeImageParams) error
 	SlugExists(ctx context.Context, slug string) (bool, error)
 	TouchOAuthGrant(ctx context.Context, id pgtype.UUID) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Recipe, error)
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -18,6 +18,18 @@ type ApiKey struct {
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 }
 
+type Invite struct {
+	ID        pgtype.UUID        `json:"id"`
+	TokenHash string             `json:"token_hash"`
+	Email     pgtype.Text        `json:"email"`
+	Role      string             `json:"role"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	UsedBy    pgtype.UUID        `json:"used_by"`
+}
+
 type OauthClient struct {
 	ID           pgtype.UUID        `json:"id"`
 	Name         string             `json:"name"`
@@ -100,11 +112,13 @@ type RecipeShare struct {
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 }
 
-type Session struct {
+type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type User struct {

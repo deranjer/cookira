@@ -11,6 +11,7 @@ import { RecipeEditor } from './pages/RecipeEditor'
 import { SettingsView } from './pages/SettingsView'
 import { OAuthAuthorize } from './pages/OAuthAuthorize'
 import { SharedRecipe } from './pages/SharedRecipe'
+import { AcceptInvite } from './pages/AcceptInvite'
 
 function Spinner() {
   return (
@@ -49,6 +50,7 @@ function App() {
     <Routes>
       {/* Share links work without login or setup state. */}
       <Route path="/s/:token" element={<SharedRecipe />} />
+      <Route path="/invite/:token" element={<AcceptInvite />} />
       <Route
         path="*"
         element={

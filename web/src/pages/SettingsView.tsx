@@ -22,11 +22,17 @@ import { IconCopy, IconCopyCheck, IconTrash } from '@tabler/icons-react'
 import {
   useApiKeys,
   useCreateApiKey,
+  useCreateInvite,
   useCreateUser,
   useDeleteApiKey,
   useDisconnectOAuth,
+  useInvites,
   useMe,
   useOAuthConnections,
+  useRemoveUser,
+  useRevokeInvite,
+  useUpdateMe,
+  useUpdateUser,
   useUsers,
 } from '../lib/api/hooks'
 import { ApiError } from '../lib/api/client'
@@ -315,13 +321,77 @@ function ConnectSection() {
   )
 }
 
+function InviteModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const createInvite = useCreateInvite()
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('member')
+  const [error, setError] = useState<string | null>(null)
+  const link = createInvite.data?.link
+
+  function close() {
+    createInvite.reset()
+    setEmail('')
+    setRole('member')
+    setError(null)
+    onClose()
+  }
+
+  return (
+    <Modal opened={opened} onClose={close} title="Invite someone">
+      {link ? (
+        <Stack gap="sm">
+          <Text size="sm">
+            Send this link to them. It works once and expires in 7 days. You won&apos;t be able to see it again.
+          </Text>
+          <CopyCode value={link} />
+          <Button onClick={close}>Done</Button>
+        </Stack>
+      ) : (
+        <Stack gap="sm">
+          <TextInput
+            label="Email (optional)"
+            description="Lock the invite to one address. Leave blank to let them enter their own."
+            value={email}
+            onChange={(e) => setEmail(e.currentTarget.value)}
+          />
+          <Select label="Role" data={['member', 'admin']} value={role} onChange={(v) => setRole(v ?? 'member')} allowDeselect={false} />
+          {error && (
+            <Text c="red" size="sm">
+              {error}
+            </Text>
+          )}
+          <Button
+            loading={createInvite.isPending}
+            onClick={() =>
+              createInvite.mutate(
+                { email: email.trim() || undefined, role },
+                { onError: (e) => setError(e instanceof ApiError ? e.message : 'Failed to create invite') },
+              )
+            }
+          >
+            Create invite link
+          </Button>
+        </Stack>
+      )}
+    </Modal>
+  )
+}
+
 function MembersSection() {
   const { data: me } = useMe()
+  const isAdmin = me?.role === 'admin'
   const { data: users } = useUsers()
+  const { data: invites } = useInvites(isAdmin)
   const createUser = useCreateUser()
+  const updateUser = useUpdateUser()
+  const removeUser = useRemoveUser()
+  const revokeInvite = useRevokeInvite()
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'member' })
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const fail = (e: unknown) => setActionError(e instanceof ApiError ? e.message : 'Something went wrong')
 
   return (
     <Stack gap="md">
@@ -332,8 +402,20 @@ function MembersSection() {
             People who can sign in. Recipes are private to signed-in members unless you share a link.
           </Text>
         </div>
-        {me?.role === 'admin' && <Button onClick={() => setOpen(true)}>Add member</Button>}
+        {isAdmin && (
+          <Group gap="xs">
+            <Button variant="default" onClick={() => setOpen(true)}>
+              Add with password
+            </Button>
+            <Button onClick={() => setInviteOpen(true)}>Invite</Button>
+          </Group>
+        )}
       </Group>
+      {actionError && (
+        <Text c="red" size="sm">
+          {actionError}
+        </Text>
+      )}
       <Table verticalSpacing="sm">
         <Table.Tbody>
           {users?.map((u) => (
@@ -341,15 +423,91 @@ function MembersSection() {
               <Table.Td>{u.name}</Table.Td>
               <Table.Td>{u.email}</Table.Td>
               <Table.Td>
-                <Badge size="sm" variant="light" color={u.role === 'admin' ? 'orange' : 'gray'}>
-                  {u.role}
-                </Badge>
+                {isAdmin ? (
+                  <Select
+                    size="xs"
+                    w={110}
+                    data={['member', 'admin']}
+                    value={u.role}
+                    allowDeselect={false}
+                    onChange={(v) => {
+                      setActionError(null)
+                      if (v) updateUser.mutate({ id: u.id, role: v }, { onError: fail })
+                    }}
+                  />
+                ) : (
+                  <Badge size="sm" variant="light" color={u.role === 'admin' ? 'orange' : 'gray'}>
+                    {u.role}
+                  </Badge>
+                )}
               </Table.Td>
+              {isAdmin && (
+                <Table.Td w={40}>
+                  {u.id !== me?.id && (
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      aria-label={`Remove ${u.name}`}
+                      onClick={() => {
+                        setActionError(null)
+                        if (window.confirm(`Remove ${u.name}? They will be signed out and lose access.`)) {
+                          removeUser.mutate(u.id, { onError: fail })
+                        }
+                      }}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  )}
+                </Table.Td>
+              )}
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
-      <Modal opened={open} onClose={() => setOpen(false)} title="Add member">
+
+      {isAdmin && !!invites?.length && (
+        <Stack gap="xs">
+          <Title order={4}>Pending invites</Title>
+          <Table verticalSpacing="xs">
+            <Table.Tbody>
+              {invites.map((inv) => (
+                <Table.Tr key={inv.id}>
+                  <Table.Td>{inv.email ?? <Text c="dimmed">Any email</Text>}</Table.Td>
+                  <Table.Td>
+                    <Badge size="sm" variant="light" color={inv.role === 'admin' ? 'orange' : 'gray'}>
+                      {inv.role}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {inv.expired ? (
+                      <Text size="sm" c="red">
+                        Expired
+                      </Text>
+                    ) : (
+                      <Text size="sm" c="dimmed">
+                        Expires {formatDate(inv.expiresAt)}
+                      </Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td w={40}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      aria-label="Revoke invite"
+                      onClick={() => revokeInvite.mutate(inv.id, { onError: fail })}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Stack>
+      )}
+
+      <InviteModal opened={inviteOpen} onClose={() => setInviteOpen(false)} />
+      <Modal opened={open} onClose={() => setOpen(false)} title="Add with password">
         <Stack gap="sm">
           <TextInput label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} required />
           <TextInput label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.currentTarget.value })} required />
@@ -381,6 +539,71 @@ function MembersSection() {
   )
 }
 
+function AccountSection() {
+  const { data: me } = useMe()
+  const update = useUpdateMe()
+  const [name, setName] = useState<string | null>(null)
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' })
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const err = (e: unknown) => setMessage({ ok: false, text: e instanceof ApiError ? e.message : 'Update failed' })
+
+  return (
+    <Stack gap="md">
+      <div>
+        <Title order={3}>Your account</Title>
+        <Text size="sm" c="dimmed">
+          Changing your password signs you out of every other device.
+        </Text>
+      </div>
+      <Group align="flex-end">
+        <TextInput label="Name" value={name ?? me?.name ?? ''} onChange={(e) => setName(e.currentTarget.value)} />
+        <Button
+          variant="default"
+          disabled={name === null || name.trim() === '' || name === me?.name}
+          loading={update.isPending}
+          onClick={() =>
+            update.mutate(
+              { name: name ?? undefined },
+              { onSuccess: () => setMessage({ ok: true, text: 'Name updated' }), onError: err },
+            )
+          }
+        >
+          Save name
+        </Button>
+      </Group>
+      <Stack gap="xs" maw={320}>
+        <PasswordInput label="Current password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.currentTarget.value })} />
+        <PasswordInput label="New password (8+ characters)" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.currentTarget.value })} />
+        <PasswordInput label="Confirm new password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.currentTarget.value })} />
+        <Button
+          disabled={!pw.current || pw.next.length < 8}
+          loading={update.isPending}
+          onClick={() => {
+            if (pw.next !== pw.confirm) return setMessage({ ok: false, text: 'New passwords do not match' })
+            update.mutate(
+              { currentPassword: pw.current, password: pw.next },
+              {
+                onSuccess: () => {
+                  setPw({ current: '', next: '', confirm: '' })
+                  setMessage({ ok: true, text: 'Password changed; other devices were signed out' })
+                },
+                onError: err,
+              },
+            )
+          }}
+        >
+          Change password
+        </Button>
+      </Stack>
+      {message && (
+        <Text size="sm" c={message.ok ? 'teal' : 'red'}>
+          {message.text}
+        </Text>
+      )}
+    </Stack>
+  )
+}
+
 export function SettingsView() {
   return (
     <Stack gap="xl" maw={860} mx="auto">
@@ -389,6 +612,7 @@ export function SettingsView() {
       <ConnectedAppsSection />
       <ConnectSection />
       <MembersSection />
+      <AccountSection />
     </Stack>
   )
 }

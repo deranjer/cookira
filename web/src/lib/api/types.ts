@@ -5,6 +5,22 @@ export interface User {
   role: 'admin' | 'member'
 }
 
+export interface Invite {
+  id: string
+  email?: string
+  role: 'admin' | 'member'
+  createdAt: string
+  expiresAt: string
+  expired: boolean
+  /** Only present on the response that creates the invite. */
+  link?: string
+}
+
+export interface InviteInfo {
+  email?: string
+  role: 'admin' | 'member'
+}
+
 export interface IngredientGroup {
   name: string
   items: string[]
