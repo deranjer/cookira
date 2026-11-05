@@ -70,6 +70,11 @@ silently. Other clients (a mobile app) pass `"tokens": true` to
 `POST /api/v1/auth/refresh {"refreshToken": "..."}`. Changing your password
 signs out your other devices; repeated failed logins for an email are throttled.
 
+## Android app
+
+A native Android client lives in [`android/`](android/README.md) and is distributed through
+my self-hosted F-Droid repo: a signed APK is attached to each `vX.Y.Z` GitHub Release.
+
 ## Development
 
 ```sh

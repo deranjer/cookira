@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose drives the real colours via MaterialTheme; this only paints the window before the first frame. -->
+    <style name="Theme.Cookira" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFBF7</item>
+    </style>
+</resources>
