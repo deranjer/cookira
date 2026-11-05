@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -30,13 +31,19 @@ Search first (list_recipes with q) before creating, to avoid duplicates. New rec
 created as drafts; leave status alone unless the user asks you to publish. Numbers use 0 for
 "not specified". Every change is recorded in the recipe's history and can be restored.`
 
+// UploadLinker mints a one-time, short-lived URL that accepts a raw image body
+// for one recipe. It is supplied by the HTTP layer, which owns the route.
+type UploadLinker func(userID, recipeID string) (url string, expires time.Time, err error)
+
 type toolServer struct {
-	svc *recipes.Service
+	svc    *recipes.Service
+	upload UploadLinker
 }
 
-// New builds the MCP server and registers every tool.
-func New(svc *recipes.Service) *mcp.Server {
-	s := &toolServer{svc: svc}
+// New builds the MCP server and registers every tool. upload may be nil, which
+// leaves out create_image_upload_url.
+func New(svc *recipes.Service, upload UploadLinker) *mcp.Server {
+	s := &toolServer{svc: svc, upload: upload}
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "cookira", Version: version.Version},
 		&mcp.ServerOptions{Instructions: instructions},
@@ -104,8 +111,18 @@ func New(svc *recipes.Service) *mcp.Server {
 		Description: "Set (or replace) a recipe's header photo, from an image URL or base64 data. " +
 			"JPEG, PNG or WebP up to 10 MB; it is resized automatically. Give exactly one of imageUrl " +
 			"(a public http/https link; private and local addresses are refused) or imageBase64. " +
-			"Requires read-write access.",
+			"For a local or large file, use create_image_upload_url instead. Requires read-write access.",
 	}, s.setImage)
+
+	if upload != nil {
+		addTool(server, &mcp.Tool{
+			Name: "create_image_upload_url",
+			Description: "Get a one-time upload URL (valid 10 minutes) for a recipe's header photo, for images that " +
+				"are a local file, not reachable by public URL, and too big to pass as base64. Then upload the file " +
+				"yourself from a shell: curl -fsS -X PUT --data-binary @photo.jpg -H 'Content-Type: image/jpeg' '<uploadUrl>'. " +
+				"JPEG, PNG or WebP up to 10 MB. The URL works once. Requires read-write access.",
+		}, s.createImageUpload)
+	}
 
 	addTool(server, &mcp.Tool{
 		Name: "create_share_link",
@@ -395,6 +412,40 @@ func (s *toolServer) revokeShare(ctx context.Context, _ *mcp.CallToolRequest, a 
 		return fail[okResult](err)
 	}
 	return nil, okResult{Revoked: true}, nil
+}
+
+type imageUploadArgs struct {
+	Recipe string `json:"recipe" jsonschema:"recipe id (uuid) or slug"`
+}
+
+type imageUploadResult struct {
+	Recipe    string `json:"recipe"`
+	UploadURL string `json:"uploadUrl"`
+	Expires   string `json:"expires"`
+	Method    string `json:"method"`
+	Example   string `json:"example"`
+}
+
+func (s *toolServer) createImageUpload(ctx context.Context, _ *mcp.CallToolRequest, a imageUploadArgs) (*mcp.CallToolResult, imageUploadResult, error) {
+	if !auth.CanWrite(ctx) {
+		return errNoWrite, imageUploadResult{}, nil
+	}
+	userID, _ := auth.UserID(ctx)
+	rec, err := s.svc.Get(ctx, a.Recipe)
+	if err != nil {
+		return fail[imageUploadResult](err)
+	}
+	url, exp, err := s.upload(userID, rec.ID)
+	if err != nil {
+		return nil, imageUploadResult{}, err
+	}
+	return nil, imageUploadResult{
+		Recipe:    rec.Slug,
+		UploadURL: url,
+		Expires:   exp.UTC().Format(time.RFC3339),
+		Method:    "PUT",
+		Example:   "curl -fsS -X PUT --data-binary @photo.jpg -H 'Content-Type: image/jpeg' '" + url + "'",
+	}, nil
 }
 
 type setImageArgs struct {

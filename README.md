@@ -124,7 +124,10 @@ and Codex also work against `http://localhost`.
 
 Photos are resized on upload (a 1600px full-size and a 640px thumbnail, both
 JPEG, EXIF-rotated and metadata-stripped). `set_recipe_image` takes a public
-image URL (private/local addresses are refused) or base64 data.
+image URL (private/local addresses are refused) or base64 data. For a local or
+large file, `create_image_upload_url` returns a one-time link (10 minutes, one
+recipe) that the agent uses with `curl -X PUT --data-binary @photo.jpg <url>`,
+so the bytes never pass through the model.
 
 ### How the OAuth server works
 
@@ -151,7 +154,8 @@ challenge, then exchange the returned `code` at `/oauth/token`.
 
 Tools: `list_recipes`, `get_recipe`,
 `list_tags`, `get_recipe_history`, `create_recipe`, `update_recipe`,
-`add_recipe_step`, `add_recipe_ingredient`, `set_recipe_image`, `delete_recipe`,
+`add_recipe_step`, `add_recipe_ingredient`, `set_recipe_image`,
+`create_image_upload_url`, `delete_recipe`,
 `restore_recipe_revision`, `create_share_link`, `list_share_links`,
 `revoke_share_link`.
 

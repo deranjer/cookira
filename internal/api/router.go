@@ -35,6 +35,7 @@ type Server struct {
 	svc       *recipes.Service
 	oauth     *oauth.Server
 	humaAPI   huma.API
+	uploads   usedUploads
 }
 
 // New builds the HTTP server. jwtSecret signs login access tokens.
@@ -74,6 +75,7 @@ func New(pool *pgxpool.Pool, svc *recipes.Service, publicURL string, jwtSecret [
 	s.registerShareRoutes()
 	s.registerPublicRoutes()
 	s.registerImageRoutes(r)
+	s.registerUploadRoute(r)
 	s.oauth.Mount(r)
 	s.registerOAuthConnectionRoutes()
 	s.registerMCPRoute(r)
@@ -92,7 +94,7 @@ func (s *Server) protected() huma.Middlewares {
 // request gets a 401 pointing at the OAuth resource metadata. Stateless
 // because every request is independently authenticated.
 func (s *Server) registerMCPRoute(r *chi.Mux) {
-	mcpSrv := mcpserver.New(s.svc)
+	mcpSrv := mcpserver.New(s.svc, s.uploadLink)
 	handler := mcpsdk.NewStreamableHTTPHandler(
 		func(*http.Request) *mcpsdk.Server { return mcpSrv },
 		&mcpsdk.StreamableHTTPOptions{Stateless: true},
