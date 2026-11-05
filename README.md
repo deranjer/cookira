@@ -21,6 +21,21 @@ React + Vite + TypeScript + Mantine + TanStack Query, PostgreSQL 18.
 
 ## Run with Docker
 
+Images are published to `ghcr.io/deranjer/cookira` for Linux amd64 and arm64:
+
+- `latest` and `edge` track successful builds of `main`.
+- Pushing a stable Git tag such as `v1.2.3` publishes `1.2.3`, `1.2`, `1`,
+  and updates `latest`. Releases before 1.0 omit the `0` alias.
+- Prerelease tags such as `v1.3.0-beta.1` publish only their full version
+  (plus the commit tag), without updating `latest` or stable version aliases.
+- Every published build also has a `sha-<commit>` tag. Pull requests build
+  the image for validation without publishing it.
+
+Create releases by pushing a `vMAJOR.MINOR.PATCH` Git tag; version numbers
+are chosen explicitly rather than inferred from commit messages. Pin a full
+version for deployments, or use `ghcr.io/deranjer/cookira:latest` to follow
+the most recently published main build or stable release.
+
 ```sh
 docker compose up --build
 ```
