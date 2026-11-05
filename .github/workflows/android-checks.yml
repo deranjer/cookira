@@ -23,7 +23,7 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: gradle
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
       - run: chmod +x ./gradlew
       - run: ./gradlew lintDebug testDebugUnitTest assembleDebug assembleRelease --no-daemon --stacktrace

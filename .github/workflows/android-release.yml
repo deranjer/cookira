@@ -51,7 +51,7 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install SDK platform
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
