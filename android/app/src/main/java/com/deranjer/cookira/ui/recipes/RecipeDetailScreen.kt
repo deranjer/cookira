@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -21,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -219,6 +221,7 @@ fun RecipeDetailScreen(ref: String, onBack: () -> Unit, onEdit: (String) -> Unit
     var showShare by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var cooking by remember { mutableStateOf(false) }
 
     // Cooking mode: keep the screen on while a recipe is open, unless turned off in Settings.
     DisposableEffect(keepAwake) {
@@ -235,8 +238,20 @@ fun RecipeDetailScreen(ref: String, onBack: () -> Unit, onEdit: (String) -> Unit
     val version by container.recipesVersion.collectAsStateWithLifecycle()
     LaunchedEffect(version) { if (state is Load.Ready) vm.load() }
 
-    Scaffold(
+    val cookRecipe = (state as? Load.Ready)?.data
+    if (cooking && cookRecipe != null) {
+        CookModeScreen(cookRecipe, checked, onToggle = vm::toggleChecked, onExit = { cooking = false })
+    } else Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = {
+            if (cookRecipe != null && cookRecipe.steps.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = { cooking = true },
+                    icon = { Icon(Icons.Default.Restaurant, null) },
+                    text = { Text("Start cooking") },
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {},
@@ -287,7 +302,7 @@ fun RecipeDetailScreen(ref: String, onBack: () -> Unit, onEdit: (String) -> Unit
                     imageUrl = if (s.data.hasImage) container.repository.imageUrl(s.data.id, s.data.updatedAt) else null,
                     checked = checked,
                     onToggle = vm::toggleChecked,
-                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 72.dp),
                 )
             }
         }

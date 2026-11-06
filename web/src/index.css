@@ -5,6 +5,17 @@ body {
   margin: 0;
 }
 
+/* Ingredients stay in view next to the directions on wide screens. */
+@media (min-width: 62em) {
+  .recipe-sticky {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+}
+
 /* Print view: just the recipe, no chrome. */
 @media print {
   .no-print {
@@ -13,6 +24,10 @@ body {
   body {
     background: #fff !important;
     color: #000 !important;
+  }
+  .recipe-sticky {
+    position: static !important;
+    max-height: none !important;
   }
   .print-only-wrap {
     padding: 0 !important;

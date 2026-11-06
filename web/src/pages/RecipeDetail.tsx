@@ -41,7 +41,7 @@ export function RecipeDetail() {
 
   return (
     <>
-      <Group justify="flex-end" mb="md" maw={860} mx="auto" className="no-print">
+      <Group justify="flex-end" mb="md" maw={1080} mx="auto" className="no-print">
         <Button
           variant="light"
           leftSection={published ? <IconEyeOff size={16} /> : <IconEye size={16} />}

@@ -6,6 +6,9 @@
     <!-- Only to tell whether the connection is metered before auto-downloading photos. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Cooking timers ring as a notification (asked for the first time a timer is started). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Photos are taken through the system camera app (ACTION_IMAGE_CAPTURE) and picked
          with the system photo picker, so no CAMERA or storage permission is needed. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -40,6 +43,8 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <receiver android:name=".timers.TimerReceiver" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
