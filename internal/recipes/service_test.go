@@ -243,3 +243,67 @@ func encodePNGBytes(t *testing.T, w, h int) []byte {
 	}
 	return b.Bytes()
 }
+
+func TestImageFramingPersistsAndRestores(t *testing.T) {
+	svc := testService(t)
+	ctx := context.Background()
+	r, err := svc.Create(ctx, Fields{Title: ptr(uniq("Framing"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ImageFraming != defaultFraming {
+		t.Fatalf("new recipe framing = %+v, want default", r.ImageFraming)
+	}
+	if err := svc.SetImage(ctx, r.ID, encodePNGBytes(t, 400, 300)); err != nil {
+		t.Fatal(err)
+	}
+	framed, err := svc.Update(ctx, r.ID, Fields{ImageFocusX: ptr(0.8), ImageFocusY: ptr(0.3), ImageZoom: ptr(2.0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ImageFraming{ImageFocusX: 0.8, ImageFocusY: 0.3, ImageZoom: 2}
+	if framed.ImageFraming != want {
+		t.Fatalf("framing = %+v, want %+v", framed.ImageFraming, want)
+	}
+
+	// The list card sees the same framing.
+	items, _, err := svc.List(ctx, ListParams{Query: framed.Title, Limit: 10})
+	if err != nil || len(items) != 1 || items[0].ImageFraming != want {
+		t.Fatalf("List = %+v, %v", items, err)
+	}
+
+	// Out-of-range framing is rejected and leaves the recipe alone.
+	if _, err := svc.Update(ctx, r.ID, Fields{ImageZoom: ptr(9.0)}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Update(zoom 9) = %v, want ErrInvalid", err)
+	}
+
+	// Reframing is a revision, so it can be restored.
+	if _, err := svc.Update(ctx, r.ID, Fields{ImageFocusX: ptr(0.1), ImageZoom: ptr(1.0)}); err != nil {
+		t.Fatal(err)
+	}
+	revs, err := svc.Revisions(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var framedRev int
+	for _, rv := range revs {
+		if rv.Action == "update" && (framedRev == 0 || rv.Revision < framedRev) {
+			framedRev = rv.Revision
+		}
+	}
+	restored, err := svc.Restore(ctx, r.ID, framedRev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.ImageFraming != want {
+		t.Fatalf("restored framing = %+v, want %+v", restored.ImageFraming, want)
+	}
+
+	// A new photo starts centred again, as does removing it.
+	if err := svc.SetImage(ctx, r.ID, encodePNGBytes(t, 400, 300)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := svc.Get(ctx, r.ID); got.ImageFraming != defaultFraming {
+		t.Errorf("framing after new photo = %+v, want default", got.ImageFraming)
+	}
+}

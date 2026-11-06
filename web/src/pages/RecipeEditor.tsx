@@ -20,6 +20,7 @@ import {
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PhotoField } from '../components/PhotoField'
+import { DEFAULT_FRAMING, framingOf, isDefaultFraming, type Framing } from '../components/FramedImage'
 import { ApiError, recipesApi } from '../lib/api/client'
 import { useCreateRecipe, useRecipe, useTags, useUpdateRecipe } from '../lib/api/hooks'
 import type { Recipe, RecipeInput } from '../lib/api/types'
@@ -76,6 +77,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
       : [{ text: '', substeps: '' }],
   )
   const [photo, setPhoto] = useState<File | null>(null)
+  const [framing, setFraming] = useState<Framing>(recipe ? framingOf(recipe) : DEFAULT_FRAMING)
   const [error, setError] = useState<string | null>(null)
 
   const num = (v: number | string) => (typeof v === 'number' ? v : 0)
@@ -97,6 +99,8 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
       notes,
       ingredients: groups.map((g) => ({ name: g.name.trim(), items: lines(g.items) })),
       steps: steps.map((s) => ({ text: s.text.trim(), substeps: lines(s.substeps) })),
+      // For a new recipe the photo (and so its framing) is uploaded after creation.
+      ...(recipe ? framing : {}),
     }
     const onError = (e: Error) => setError(e instanceof ApiError ? e.message : 'Save failed')
     if (recipe) {
@@ -107,6 +111,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
           if (photo) {
             try {
               await recipesApi.uploadImage(r.id, photo)
+              if (!isDefaultFraming(framing)) await recipesApi.update(r.id, framing)
             } catch (e) {
               // The recipe exists now, so keep the user on its edit page to retry the photo.
               setError(`Recipe saved, but the photo upload failed: ${e instanceof Error ? e.message : 'unknown error'}`)
@@ -125,7 +130,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
     <Stack gap="lg" maw={860} mx="auto">
       <Title order={2}>{recipe ? 'Edit recipe' : 'New recipe'}</Title>
 
-      <PhotoField recipe={recipe} pendingFile={photo} onPendingFile={setPhoto} />
+      <PhotoField recipe={recipe} pendingFile={photo} onPendingFile={setPhoto} framing={framing} onFramingChange={setFraming} />
 
       <TextInput label="Title" required value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
       <TextInput label="Tagline" value={tagline} onChange={(e) => setTagline(e.currentTarget.value)} />

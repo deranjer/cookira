@@ -50,6 +50,10 @@ export interface Recipe {
   ingredients: IngredientGroup[]
   steps: Step[]
   hasImage: boolean
+  /** Photo framing; absent on servers older than framing support. */
+  imageFocusX?: number
+  imageFocusY?: number
+  imageZoom?: number
   createdAt: string
   updatedAt: string
 }
@@ -79,6 +83,9 @@ export type RecipeInput = Partial<
     | 'tags'
     | 'ingredients'
     | 'steps'
+    | 'imageFocusX'
+    | 'imageFocusY'
+    | 'imageZoom'
   >
 >
 

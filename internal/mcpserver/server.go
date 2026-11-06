@@ -102,7 +102,7 @@ func New(svc *recipes.Service) *mcp.Server {
 	addTool(server, &mcp.Tool{
 		Name: "set_recipe_image",
 		Description: "Set (or replace) a recipe's header photo, from an image URL or base64 data. " +
-			"JPEG, PNG or WebP up to 10 MB; it is resized automatically. Give exactly one of imageUrl " +
+			"JPEG, PNG or WebP up to 10 MB; it is resized automatically and shown centred unless you pass focusX/focusY (0-1, where the subject is) and zoom (1-4). Give exactly one of imageUrl " +
 			"(a public http/https link; private and local addresses are refused) or imageBase64. " +
 			"Requires read-write access.",
 	}, s.setImage)
@@ -239,6 +239,9 @@ type recipeFields struct {
 	Tags        []string        `json:"tags,omitempty" jsonschema:"lowercase tags; replaces the whole list"`
 	Ingredients []recipes.Group `json:"ingredients,omitempty" jsonschema:"ingredient groups, each {name, items[]}; use name \"\" for an ungrouped list; replaces the whole list"`
 	Steps       []recipes.Step  `json:"steps,omitempty" jsonschema:"ordered directions, each {text, substeps[]}; replaces the whole list"`
+	ImageFocusX *float64        `json:"imageFocusX,omitempty" jsonschema:"update only: photo focal point, 0 (left) to 1 (right); default 0.5"`
+	ImageFocusY *float64        `json:"imageFocusY,omitempty" jsonschema:"update only: photo focal point, 0 (top) to 1 (bottom); default 0.5"`
+	ImageZoom   *float64        `json:"imageZoom,omitempty" jsonschema:"update only: photo zoom around the focal point, 1 (whole photo) to 4"`
 }
 
 func (f recipeFields) toFields() recipes.Fields {
@@ -246,6 +249,7 @@ func (f recipeFields) toFields() recipes.Fields {
 		Slug: f.Slug, Title: f.Title, Tagline: f.Tagline, Author: f.Author,
 		Servings: f.Servings, PrepMinutes: f.PrepMinutes, CookMinutes: f.CookMinutes,
 		Calories: f.Calories, SourceURL: f.SourceURL, Notes: f.Notes, Status: f.Status,
+		ImageFocusX: f.ImageFocusX, ImageFocusY: f.ImageFocusY, ImageZoom: f.ImageZoom,
 	}
 	if f.Tags != nil {
 		out.Tags = &f.Tags
@@ -401,6 +405,9 @@ type setImageArgs struct {
 	Recipe      string `json:"recipe" jsonschema:"recipe id (uuid) or slug"`
 	ImageURL    string `json:"imageUrl,omitempty" jsonschema:"public http(s) URL of a JPEG, PNG or WebP image"`
 	ImageBase64 string `json:"imageBase64,omitempty" jsonschema:"the image bytes, base64-encoded (optionally as a data: URL)"`
+	FocusX      *float64 `json:"focusX,omitempty" jsonschema:"optional focal point, 0 (left) to 1 (right); default 0.5 (centred)"`
+	FocusY      *float64 `json:"focusY,omitempty" jsonschema:"optional focal point, 0 (top) to 1 (bottom); default 0.5 (centred)"`
+	Zoom        *float64 `json:"zoom,omitempty" jsonschema:"optional zoom around the focal point, 1 (whole photo) to 4; default 1"`
 }
 
 type setImageResult struct {
@@ -431,6 +438,11 @@ func (s *toolServer) setImage(ctx context.Context, _ *mcp.CallToolRequest, a set
 	}
 	if err != nil {
 		return fail[setImageResult](err)
+	}
+	if a.FocusX != nil || a.FocusY != nil || a.Zoom != nil {
+		if _, err := s.svc.Update(ctx, a.Recipe, recipes.Fields{ImageFocusX: a.FocusX, ImageFocusY: a.FocusY, ImageZoom: a.Zoom}); err != nil {
+			return fail[setImageResult](err)
+		}
 	}
 	return nil, setImageResult{Recipe: a.Recipe, Set: true}, nil
 }

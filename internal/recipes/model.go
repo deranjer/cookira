@@ -59,6 +59,36 @@ type Step struct {
 	Substeps []string `json:"substeps,omitempty"`
 }
 
+// ImageFraming says how the header photo is framed. The stored image is never
+// cropped: clients show it with object-position at the focal point and scale
+// it by Zoom around that point. The zero value is not valid; use
+// defaultFraming (centred, no zoom). Old snapshots without these fields are
+// repaired by normalizeFraming.
+type ImageFraming struct {
+	ImageFocusX float64 `json:"imageFocusX" minimum:"0" maximum:"1" doc:"Focal point, 0 (left) to 1 (right)"`
+	ImageFocusY float64 `json:"imageFocusY" minimum:"0" maximum:"1" doc:"Focal point, 0 (top) to 1 (bottom)"`
+	ImageZoom   float64 `json:"imageZoom" minimum:"1" maximum:"4" doc:"Zoom factor around the focal point, 1 = whole photo fits the frame"`
+}
+
+const (
+	maxZoom = 4.0
+)
+
+var defaultFraming = ImageFraming{ImageFocusX: 0.5, ImageFocusY: 0.5, ImageZoom: 1}
+
+// normalizeFraming fills in defaults for a missing (zero) zoom, which is what
+// revision snapshots taken before framing existed decode to.
+func normalizeFraming(f *ImageFraming) {
+	if f.ImageZoom == 0 {
+		*f = defaultFraming
+	}
+}
+
+func validFraming(f ImageFraming) bool {
+	in01 := func(v float64) bool { return v >= 0 && v <= 1 } // also rejects NaN
+	return in01(f.ImageFocusX) && in01(f.ImageFocusY) && f.ImageZoom >= 1 && f.ImageZoom <= maxZoom
+}
+
 // Recipe is the full API shape of a recipe. Numeric fields use 0 for
 // "not specified".
 type Recipe struct {
@@ -78,8 +108,9 @@ type Recipe struct {
 	Ingredients []Group  `json:"ingredients"`
 	Steps       []Step   `json:"steps"`
 	HasImage    bool     `json:"hasImage"`
-	CreatedAt   string   `json:"createdAt"`
-	UpdatedAt   string   `json:"updatedAt"`
+	ImageFraming
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // Summary is the compact list shape (no ingredients/steps/notes).
@@ -96,7 +127,8 @@ type Summary struct {
 	Status      string   `json:"status"`
 	Tags        []string `json:"tags"`
 	HasImage    bool     `json:"hasImage"`
-	UpdatedAt   string   `json:"updatedAt"`
+	ImageFraming
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // Fields carries the editable parts of a recipe. A nil pointer means "leave
@@ -117,6 +149,10 @@ type Fields struct {
 	Tags        *[]string
 	Ingredients *[]Group
 	Steps       *[]Step
+	// Photo framing; each part is patched independently.
+	ImageFocusX *float64
+	ImageFocusY *float64
+	ImageZoom   *float64
 }
 
 type Revision struct {
@@ -141,22 +177,23 @@ type TagCount struct {
 
 func fromRow(r db.Recipe) (Recipe, error) {
 	out := Recipe{
-		ID:          r.ID.String(),
-		Slug:        r.Slug,
-		Title:       r.Title,
-		Tagline:     r.Tagline,
-		Author:      r.Author,
-		Servings:    int(r.Servings),
-		PrepMinutes: int(r.PrepMinutes),
-		CookMinutes: int(r.CookMinutes),
-		Calories:    int(r.Calories),
-		SourceURL:   r.SourceUrl,
-		Notes:       r.Notes,
-		Status:      r.Status,
-		Tags:        nonNil(r.Tags),
-		HasImage:    r.ImageKey != "",
-		CreatedAt:   r.CreatedAt.Time.Format(timeFormat),
-		UpdatedAt:   r.UpdatedAt.Time.Format(timeFormat),
+		ID:           r.ID.String(),
+		Slug:         r.Slug,
+		Title:        r.Title,
+		Tagline:      r.Tagline,
+		Author:       r.Author,
+		Servings:     int(r.Servings),
+		PrepMinutes:  int(r.PrepMinutes),
+		CookMinutes:  int(r.CookMinutes),
+		Calories:     int(r.Calories),
+		SourceURL:    r.SourceUrl,
+		Notes:        r.Notes,
+		Status:       r.Status,
+		Tags:         nonNil(r.Tags),
+		HasImage:     r.ImageKey != "",
+		ImageFraming: ImageFraming{ImageFocusX: r.ImageFocusX, ImageFocusY: r.ImageFocusY, ImageZoom: r.ImageZoom},
+		CreatedAt:    r.CreatedAt.Time.Format(timeFormat),
+		UpdatedAt:    r.UpdatedAt.Time.Format(timeFormat),
 	}
 	if err := json.Unmarshal(r.Ingredients, &out.Ingredients); err != nil {
 		return Recipe{}, fmt.Errorf("decoding ingredients: %w", err)
@@ -182,19 +219,20 @@ func nonNil(s []string) []string {
 
 func summaryFromRow(r db.ListRecipesRow) Summary {
 	return Summary{
-		ID:          r.ID.String(),
-		Slug:        r.Slug,
-		Title:       r.Title,
-		Tagline:     r.Tagline,
-		Author:      r.Author,
-		Servings:    int(r.Servings),
-		PrepMinutes: int(r.PrepMinutes),
-		CookMinutes: int(r.CookMinutes),
-		Calories:    int(r.Calories),
-		Status:      r.Status,
-		Tags:        nonNil(r.Tags),
-		HasImage:    r.ImageKey != "",
-		UpdatedAt:   r.UpdatedAt.Time.Format(timeFormat),
+		ID:           r.ID.String(),
+		Slug:         r.Slug,
+		Title:        r.Title,
+		Tagline:      r.Tagline,
+		Author:       r.Author,
+		Servings:     int(r.Servings),
+		PrepMinutes:  int(r.PrepMinutes),
+		CookMinutes:  int(r.CookMinutes),
+		Calories:     int(r.Calories),
+		Status:       r.Status,
+		Tags:         nonNil(r.Tags),
+		HasImage:     r.ImageKey != "",
+		ImageFraming: ImageFraming{ImageFocusX: r.ImageFocusX, ImageFocusY: r.ImageFocusY, ImageZoom: r.ImageZoom},
+		UpdatedAt:    r.UpdatedAt.Time.Format(timeFormat),
 	}
 }
 
@@ -243,10 +281,23 @@ func apply(r *Recipe, f Fields) error {
 	if f.Steps != nil {
 		r.Steps = *f.Steps
 	}
+	if f.ImageFocusX != nil {
+		r.ImageFocusX = *f.ImageFocusX
+	}
+	if f.ImageFocusY != nil {
+		r.ImageFocusY = *f.ImageFocusY
+	}
+	if f.ImageZoom != nil {
+		r.ImageZoom = *f.ImageZoom
+	}
 	return normalize(r)
 }
 
 func normalize(r *Recipe) error {
+	normalizeFraming(&r.ImageFraming)
+	if !validFraming(r.ImageFraming) {
+		return invalid("imageFocusX and imageFocusY must be between 0 and 1, and imageZoom between 1 and %g", maxZoom)
+	}
 	if r.Title == "" {
 		return invalid("title is required")
 	}

@@ -24,16 +24,21 @@ UPDATE recipes SET
     slug = $2, title = $3, tagline = $4, author = $5, servings = $6,
     prep_minutes = $7, cook_minutes = $8, calories = $9, source_url = $10,
     notes = $11, status = $12, tags = $13, ingredients = $14, steps = $15,
-    deleted_at = $16, updated_at = now()
+    deleted_at = $16, image_focus_x = $17, image_focus_y = $18, image_zoom = $19,
+    updated_at = now()
 WHERE id = $1
 RETURNING *;
 
 -- name: SetRecipeImage :exec
-UPDATE recipes SET image_key = $2, image_thumb_key = $3, image_type = $4, updated_at = now() WHERE id = $1;
+-- A new (or removed) photo resets the framing to centred, no zoom.
+UPDATE recipes SET image_key = $2, image_thumb_key = $3, image_type = $4,
+    image_focus_x = 0.5, image_focus_y = 0.5, image_zoom = 1, updated_at = now()
+WHERE id = $1;
 
 -- name: ListRecipes :many
 SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes,
-       calories, status, tags, image_key, created_at, updated_at
+       calories, status, tags, image_key, image_focus_x, image_focus_y, image_zoom,
+       created_at, updated_at
 FROM recipes
 WHERE deleted_at IS NULL
   AND (sqlc.arg(status)::text = '' OR status = sqlc.arg(status)::text)

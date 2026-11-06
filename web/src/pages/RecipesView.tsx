@@ -3,6 +3,7 @@ import { Badge, Card, Chip, Group, Loader, SegmentedControl, SimpleGrid, Stack, 
 import { useDebouncedValue } from '@mantine/hooks'
 import { IconClock, IconSearch } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
+import { FramedImage, framingOf } from '../components/FramedImage'
 import { recipesApi } from '../lib/api/client'
 import { useRecipes, useTags } from '../lib/api/hooks'
 import type { RecipeSummary } from '../lib/api/types'
@@ -13,11 +14,11 @@ function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
   return (
     <Card withBorder padding={0} component={Link} to={`/recipes/${recipe.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
       {recipe.hasImage ? (
-        <img
+        <FramedImage
           src={recipesApi.imageUrl(recipe.slug, recipe.updatedAt, true)}
-          alt=""
+          framing={framingOf(recipe)}
+          height={160}
           loading="lazy"
-          style={{ width: '100%', height: 160, objectFit: 'cover' }}
         />
       ) : (
         <div style={{ height: 160, background: 'var(--mantine-color-orange-light)' }} />

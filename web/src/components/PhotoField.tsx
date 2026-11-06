@@ -5,6 +5,8 @@ import { IconPhoto, IconTrash, IconUpload, IconX } from '@tabler/icons-react'
 import { recipesApi } from '../lib/api/client'
 import { useRemoveImage, useUploadImage } from '../lib/api/hooks'
 import type { Recipe } from '../lib/api/types'
+import { DEFAULT_FRAMING, type Framing } from './FramedImage'
+import { PhotoFraming } from './PhotoFraming'
 
 const ACCEPT = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_BYTES = 10 * 1024 * 1024
@@ -15,6 +17,9 @@ interface Props {
   /** New-recipe mode: the chosen file is held here and uploaded after the recipe is created. */
   pendingFile: File | null
   onPendingFile: (file: File | null) => void
+  /** Focal point and zoom for the photo; saved together with the recipe. */
+  framing: Framing
+  onFramingChange: (f: Framing) => void
 }
 
 /**
@@ -22,7 +27,7 @@ interface Props {
  * uploads straight away (the server resizes it); for a new recipe it is held
  * until the recipe has been created.
  */
-export function PhotoField({ recipe, pendingFile, onPendingFile }: Props) {
+export function PhotoField({ recipe, pendingFile, onPendingFile, framing, onFramingChange }: Props) {
   const upload = useUploadImage(recipe?.id ?? '')
   const remove = useRemoveImage(recipe?.id ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -32,15 +37,18 @@ export function PhotoField({ recipe, pendingFile, onPendingFile }: Props) {
 
   const savedUrl = recipe?.hasImage ? recipesApi.imageUrl(recipe.id, recipe.updatedAt) : null
   const preview = pendingUrl ?? savedUrl
+  const thumbPreview = pendingUrl ?? (recipe?.hasImage ? recipesApi.imageUrl(recipe.id, recipe.updatedAt, true) : null)
 
   function onDrop(files: File[]) {
     setError(null)
     const file = files[0]
     if (!file) return
     if (recipe) {
-      upload.mutate(file, { onError: (e) => setError(e.message) })
+      // A replaced photo starts centred again, matching what the server stores.
+      upload.mutate(file, { onSuccess: () => onFramingChange(DEFAULT_FRAMING), onError: (e) => setError(e.message) })
     } else {
       onPendingFile(file)
+      onFramingChange(DEFAULT_FRAMING)
     }
   }
 
@@ -62,13 +70,7 @@ export function PhotoField({ recipe, pendingFile, onPendingFile }: Props) {
       <Text size="sm" fw={500}>
         Photo
       </Text>
-      {preview && (
-        <img
-          src={preview}
-          alt=""
-          style={{ width: '100%', maxHeight: 260, objectFit: 'cover', borderRadius: 'var(--mantine-radius-md)' }}
-        />
-      )}
+      {preview && thumbPreview && <PhotoFraming src={preview} thumbSrc={thumbPreview} framing={framing} onChange={onFramingChange} />}
       <Dropzone
         onDrop={onDrop}
         onReject={onReject}
@@ -92,7 +94,7 @@ export function PhotoField({ recipe, pendingFile, onPendingFile }: Props) {
           <div>
             <Text size="md">{preview ? 'Drop a new photo here, or click to replace it' : 'Drop a photo here, or click to choose one'}</Text>
             <Text size="xs" c="dimmed">
-              JPEG, PNG or WebP up to 10 MB. It is resized automatically.
+              JPEG, PNG or WebP up to 10 MB. It is resized automatically; you choose the framing above.
             </Text>
           </div>
         </Group>
@@ -108,6 +110,7 @@ export function PhotoField({ recipe, pendingFile, onPendingFile }: Props) {
             disabled={busy}
             onClick={() => {
               setError(null)
+              onFramingChange(DEFAULT_FRAMING)
               if (pendingFile) onPendingFile(null)
               else remove.mutate(undefined, { onError: (e) => setError(e.message) })
             }}

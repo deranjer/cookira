@@ -34,6 +34,9 @@ type recipeFieldsBody struct {
 	Tags        []string        `json:"tags,omitempty"`
 	Ingredients []recipes.Group `json:"ingredients,omitempty"`
 	Steps       []recipes.Step  `json:"steps,omitempty"`
+	ImageFocusX *float64        `json:"imageFocusX,omitempty" minimum:"0" maximum:"1" doc:"Photo focal point, 0 (left) to 1 (right); update only"`
+	ImageFocusY *float64        `json:"imageFocusY,omitempty" minimum:"0" maximum:"1" doc:"Photo focal point, 0 (top) to 1 (bottom); update only"`
+	ImageZoom   *float64        `json:"imageZoom,omitempty" minimum:"1" maximum:"4" doc:"Photo zoom around the focal point; update only"`
 }
 
 func (b recipeFieldsBody) fields() recipes.Fields {
@@ -41,6 +44,7 @@ func (b recipeFieldsBody) fields() recipes.Fields {
 		Slug: b.Slug, Title: b.Title, Tagline: b.Tagline, Author: b.Author,
 		Servings: b.Servings, PrepMinutes: b.PrepMinutes, CookMinutes: b.CookMinutes,
 		Calories: b.Calories, SourceURL: b.SourceURL, Notes: b.Notes, Status: b.Status,
+		ImageFocusX: b.ImageFocusX, ImageFocusY: b.ImageFocusY, ImageZoom: b.ImageZoom,
 	}
 	if b.Tags != nil {
 		f.Tags = &b.Tags

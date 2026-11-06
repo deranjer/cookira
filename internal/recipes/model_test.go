@@ -2,6 +2,7 @@ package recipes
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -76,5 +77,38 @@ func TestPatchLeavesUnsuppliedFieldsAlone(t *testing.T) {
 	}
 	if r.Title != "Soup" || r.Servings != 4 || len(r.Tags) != 1 || r.Status != StatusPublished {
 		t.Errorf("patch changed unrelated fields: %#v", r)
+	}
+}
+
+func TestFramingDefaultsAndValidation(t *testing.T) {
+	// A zero framing (an old snapshot, or a brand-new Recipe) becomes centred, no zoom.
+	r := Recipe{Title: "T", Status: StatusDraft}
+	if err := apply(&r, Fields{}); err != nil {
+		t.Fatal(err)
+	}
+	if r.ImageFraming != defaultFraming {
+		t.Fatalf("framing = %+v, want %+v", r.ImageFraming, defaultFraming)
+	}
+
+	// Each part patches independently.
+	if err := apply(&r, Fields{ImageFocusX: ptr(0.2), ImageZoom: ptr(2.5)}); err != nil {
+		t.Fatal(err)
+	}
+	if r.ImageFocusX != 0.2 || r.ImageFocusY != 0.5 || r.ImageZoom != 2.5 {
+		t.Fatalf("framing = %+v", r.ImageFraming)
+	}
+
+	for name, f := range map[string]Fields{
+		"x low":    {ImageFocusX: ptr(-0.1)},
+		"x high":   {ImageFocusX: ptr(1.01)},
+		"y high":   {ImageFocusY: ptr(2.0)},
+		"zoom low": {ImageZoom: ptr(0.5)},
+		"zoom big": {ImageZoom: ptr(4.5)},
+		"nan":      {ImageFocusX: ptr(math.NaN())},
+	} {
+		c := r
+		if err := apply(&c, f); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: apply = %v, want ErrInvalid", name, err)
+		}
 	}
 }

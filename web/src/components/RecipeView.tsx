@@ -1,6 +1,7 @@
 import { Badge, Divider, Group, List, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import { IconClock, IconFlame, IconSoup, IconToolsKitchen2 } from '@tabler/icons-react'
 import ReactMarkdown from 'react-markdown'
+import { FramedImage, HEADER_ASPECT, framingOf } from './FramedImage'
 import type { Recipe } from '../lib/api/types'
 import { formatMinutes } from '../theme'
 
@@ -25,10 +26,12 @@ export function RecipeView({ recipe, imageUrl }: { recipe: Recipe; imageUrl?: st
   return (
     <Stack gap="lg" maw={860} mx="auto">
       {imageUrl && (
-        <img
+        <FramedImage
           src={imageUrl}
-          alt=""
-          style={{ width: '100%', maxHeight: 380, objectFit: 'cover', borderRadius: 'var(--mantine-radius-md)' }}
+          framing={framingOf(recipe)}
+          aspect={HEADER_ASPECT}
+          maxHeight={380}
+          radius="var(--mantine-radius-md)"
         />
       )}
       <div>
