@@ -43,7 +43,7 @@ INSERT INTO recipes (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 )
-RETURNING id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at
+RETURNING id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom
 `
 
 type CreateRecipeParams struct {
@@ -107,6 +107,9 @@ func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Rec
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
@@ -171,7 +174,7 @@ func (q *Queries) CreateShare(ctx context.Context, arg CreateShareParams) (Recip
 }
 
 const getRecipe = `-- name: GetRecipe :one
-SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at FROM recipes WHERE id = $1 AND deleted_at IS NULL
+SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom FROM recipes WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetRecipe(ctx context.Context, id pgtype.UUID) (Recipe, error) {
@@ -201,12 +204,15 @@ func (q *Queries) GetRecipe(ctx context.Context, id pgtype.UUID) (Recipe, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
 
 const getRecipeAny = `-- name: GetRecipeAny :one
-SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at FROM recipes WHERE id = $1
+SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom FROM recipes WHERE id = $1
 `
 
 func (q *Queries) GetRecipeAny(ctx context.Context, id pgtype.UUID) (Recipe, error) {
@@ -236,12 +242,15 @@ func (q *Queries) GetRecipeAny(ctx context.Context, id pgtype.UUID) (Recipe, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
 
 const getRecipeByShareToken = `-- name: GetRecipeByShareToken :one
-SELECT r.id, r.slug, r.title, r.tagline, r.author, r.servings, r.prep_minutes, r.cook_minutes, r.calories, r.source_url, r.notes, r.status, r.tags, r.ingredients, r.steps, r.image_key, r.image_thumb_key, r.image_type, r.search, r.created_by, r.created_at, r.updated_at, r.deleted_at FROM recipe_shares s
+SELECT r.id, r.slug, r.title, r.tagline, r.author, r.servings, r.prep_minutes, r.cook_minutes, r.calories, r.source_url, r.notes, r.status, r.tags, r.ingredients, r.steps, r.image_key, r.image_thumb_key, r.image_type, r.search, r.created_by, r.created_at, r.updated_at, r.deleted_at, r.image_focus_x, r.image_focus_y, r.image_zoom FROM recipe_shares s
 JOIN recipes r ON r.id = s.recipe_id
 WHERE s.token = $1
   AND s.revoked_at IS NULL
@@ -276,12 +285,15 @@ func (q *Queries) GetRecipeByShareToken(ctx context.Context, token string) (Reci
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
 
 const getRecipeBySlug = `-- name: GetRecipeBySlug :one
-SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at FROM recipes WHERE slug = $1 AND deleted_at IS NULL
+SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom FROM recipes WHERE slug = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetRecipeBySlug(ctx context.Context, slug string) (Recipe, error) {
@@ -311,12 +323,15 @@ func (q *Queries) GetRecipeBySlug(ctx context.Context, slug string) (Recipe, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
 
 const getRecipeForUpdate = `-- name: GetRecipeForUpdate :one
-SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at FROM recipes WHERE id = $1 FOR UPDATE
+SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom FROM recipes WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetRecipeForUpdate(ctx context.Context, id pgtype.UUID) (Recipe, error) {
@@ -346,6 +361,9 @@ func (q *Queries) GetRecipeForUpdate(ctx context.Context, id pgtype.UUID) (Recip
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }
@@ -377,7 +395,8 @@ func (q *Queries) GetRevision(ctx context.Context, arg GetRevisionParams) (Recip
 
 const listRecipes = `-- name: ListRecipes :many
 SELECT id, slug, title, tagline, author, servings, prep_minutes, cook_minutes,
-       calories, status, tags, image_key, created_at, updated_at
+       calories, status, tags, image_key, image_focus_x, image_focus_y, image_zoom,
+       created_at, updated_at
 FROM recipes
 WHERE deleted_at IS NULL
   AND ($1::text = '' OR status = $1::text)
@@ -415,6 +434,9 @@ type ListRecipesRow struct {
 	Status      string             `json:"status"`
 	Tags        []string           `json:"tags"`
 	ImageKey    string             `json:"image_key"`
+	ImageFocusX float64            `json:"image_focus_x"`
+	ImageFocusY float64            `json:"image_focus_y"`
+	ImageZoom   float64            `json:"image_zoom"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
@@ -447,6 +469,9 @@ func (q *Queries) ListRecipes(ctx context.Context, arg ListRecipesParams) ([]Lis
 			&i.Status,
 			&i.Tags,
 			&i.ImageKey,
+			&i.ImageFocusX,
+			&i.ImageFocusY,
+			&i.ImageZoom,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -596,7 +621,9 @@ func (q *Queries) RevokeShare(ctx context.Context, arg RevokeShareParams) (int64
 }
 
 const setRecipeImage = `-- name: SetRecipeImage :exec
-UPDATE recipes SET image_key = $2, image_thumb_key = $3, image_type = $4, updated_at = now() WHERE id = $1
+UPDATE recipes SET image_key = $2, image_thumb_key = $3, image_type = $4,
+    image_focus_x = 0.5, image_focus_y = 0.5, image_zoom = 1, updated_at = now()
+WHERE id = $1
 `
 
 type SetRecipeImageParams struct {
@@ -606,6 +633,7 @@ type SetRecipeImageParams struct {
 	ImageType     string      `json:"image_type"`
 }
 
+// A new (or removed) photo resets the framing to centred, no zoom.
 func (q *Queries) SetRecipeImage(ctx context.Context, arg SetRecipeImageParams) error {
 	_, err := q.db.Exec(ctx, setRecipeImage,
 		arg.ID,
@@ -632,9 +660,10 @@ UPDATE recipes SET
     slug = $2, title = $3, tagline = $4, author = $5, servings = $6,
     prep_minutes = $7, cook_minutes = $8, calories = $9, source_url = $10,
     notes = $11, status = $12, tags = $13, ingredients = $14, steps = $15,
-    deleted_at = $16, updated_at = now()
+    deleted_at = $16, image_focus_x = $17, image_focus_y = $18, image_zoom = $19,
+    updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at
+RETURNING id, slug, title, tagline, author, servings, prep_minutes, cook_minutes, calories, source_url, notes, status, tags, ingredients, steps, image_key, image_thumb_key, image_type, search, created_by, created_at, updated_at, deleted_at, image_focus_x, image_focus_y, image_zoom
 `
 
 type UpdateRecipeParams struct {
@@ -654,6 +683,9 @@ type UpdateRecipeParams struct {
 	Ingredients []byte             `json:"ingredients"`
 	Steps       []byte             `json:"steps"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	ImageFocusX float64            `json:"image_focus_x"`
+	ImageFocusY float64            `json:"image_focus_y"`
+	ImageZoom   float64            `json:"image_zoom"`
 }
 
 func (q *Queries) UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Recipe, error) {
@@ -674,6 +706,9 @@ func (q *Queries) UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Rec
 		arg.Ingredients,
 		arg.Steps,
 		arg.DeletedAt,
+		arg.ImageFocusX,
+		arg.ImageFocusY,
+		arg.ImageZoom,
 	)
 	var i Recipe
 	err := row.Scan(
@@ -700,6 +735,9 @@ func (q *Queries) UpdateRecipe(ctx context.Context, arg UpdateRecipeParams) (Rec
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ImageFocusX,
+		&i.ImageFocusY,
+		&i.ImageZoom,
 	)
 	return i, err
 }

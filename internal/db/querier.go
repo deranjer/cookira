@@ -69,6 +69,7 @@ type Querier interface {
 	RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	RevokeShare(ctx context.Context, arg RevokeShareParams) (int64, error)
 	SetInviteUsedBy(ctx context.Context, arg SetInviteUsedByParams) error
+	// A new (or removed) photo resets the framing to centred, no zoom.
 	SetRecipeImage(ctx context.Context, arg SetRecipeImageParams) error
 	SlugExists(ctx context.Context, slug string) (bool, error)
 	TouchOAuthGrant(ctx context.Context, id pgtype.UUID) error

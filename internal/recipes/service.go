@@ -221,6 +221,9 @@ func (s *Service) Restore(ctx context.Context, ref string, revision int) (Recipe
 			return fmt.Errorf("decoding revision: %w", err)
 		}
 		snap.ID, snap.Slug, snap.HasImage = r.ID, r.Slug, r.HasImage
+		if !r.HasImage {
+			snap.ImageFraming = defaultFraming
+		}
 		snap.CreatedAt, snap.UpdatedAt = r.CreatedAt, r.UpdatedAt
 		*r = snap
 		*deleted = false
@@ -286,6 +289,7 @@ func (s *Service) mutate(ctx context.Context, ref, action string, allowDeleted b
 			CookMinutes: int32(r.CookMinutes), Calories: int32(r.Calories),
 			SourceUrl: r.SourceURL, Notes: r.Notes, Status: r.Status, Tags: r.Tags,
 			Ingredients: ing, Steps: steps, DeletedAt: deletedAt,
+			ImageFocusX: r.ImageFocusX, ImageFocusY: r.ImageFocusY, ImageZoom: r.ImageZoom,
 		})
 		if err != nil {
 			return err

@@ -79,6 +79,9 @@ type Recipe struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	ImageFocusX   float64            `json:"image_focus_x"`
+	ImageFocusY   float64            `json:"image_focus_y"`
+	ImageZoom     float64            `json:"image_zoom"`
 }
 
 type RecipeRevision struct {
