@@ -1,0 +1,68 @@
+name: Android Auto Release
+
+# Cuts a new patch release whenever an Android change lands on main and its checks pass:
+# tags the commit vX.Y.(Z+1) and runs android-release.yml for that tag, which builds the signed
+# APK and attaches it to the GitHub Release the F-Droid repo (deranjer/fdroid) picks up daily.
+#
+# Bigger bumps stay manual: push a v0.2.0 / v1.0.0 tag yourself and the next automatic release
+# continues from it. A commit that already has a version tag is skipped.
+#
+# The tag is pushed with GITHUB_TOKEN, which deliberately does not trigger other workflows, so
+# this dispatches android-release.yml explicitly (and no Docker image is built for the tag; main
+# already publishes `latest`).
+on:
+  workflow_run:
+    workflows: ["Android Checks"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: android-auto-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and release
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+
+      - name: Pick the next version
+        id: next
+        run: |
+          if [ -n "$(git tag --points-at "$SHA" -l 'v[0-9]*')" ]; then
+            echo "This commit is already tagged; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Latest stable tag (prereleases like v1.0.0-beta.1 don't count).
+          LAST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v -- '-' | head -n1 || true)
+          if [ -z "$LAST" ]; then
+            NEXT="v0.1.0"
+          else
+            IFS=. read -r MA MI PA <<< "${LAST#v}"
+            NEXT="v$MA.$MI.$((PA + 1))"
+          fi
+          echo "Last release: ${LAST:-none}; next: $NEXT"
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the commit
+        if: steps.next.outputs.skip != 'true'
+        run: |
+          git tag "${{ steps.next.outputs.tag }}" "$SHA"
+          git push origin "${{ steps.next.outputs.tag }}"
+
+      - name: Build and publish the APK
+        if: steps.next.outputs.skip != 'true'
+        run: gh workflow run android-release.yml --repo "$GITHUB_REPOSITORY" -f tag="${{ steps.next.outputs.tag }}"

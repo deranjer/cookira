@@ -45,10 +45,14 @@ Same flow as Domitara and BookOrbit: a signed APK is attached to a GitHub Releas
 [F-Droid repo](https://deranjer.github.io/fdroid/repo) (`deranjer/fdroid`) downloads the
 latest one daily and re-signs the index.
 
-1. Push a version tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`. `ci.yml` publishes the
-   Docker image; `android-release.yml` builds `cookira-0.1.0.apk` and creates the GitHub
-   Release if needed. `versionCode = major*10000 + minor*100 + patch`. Tags with a `-suffix`
-   are prereleases and are skipped by the F-Droid repo.
+1. **Automatic:** every Android change that lands on `main` and passes `android-checks.yml`
+   is tagged with the next patch version (`android-auto-release.yml`: v0.1.0 first, then
+   v0.1.1, ...) and `android-release.yml` builds `cookira-X.Y.Z.apk` and creates the GitHub
+   Release. `versionCode = major*10000 + minor*100 + patch`.
+   **Manual:** for a minor or major bump, push the tag yourself, e.g.
+   `git tag v0.2.0 && git push origin v0.2.0`; `ci.yml` also publishes the Docker image for
+   that tag, and automatic releases continue from it. Tags with a `-suffix` are prereleases and
+   are skipped by the F-Droid repo.
 2. The `Update F-Droid repo` workflow in `deranjer/fdroid` (daily, or run it by hand) picks it up.
 
 ### One-time setup
