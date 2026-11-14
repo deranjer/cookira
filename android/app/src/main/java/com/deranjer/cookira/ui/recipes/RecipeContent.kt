@@ -97,6 +97,8 @@ fun RecipeContent(
 
         Stats(recipe)
 
+        GroceryView(recipe.ingredients)
+
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Ingredients", style = MaterialTheme.typography.titleLarge)
             if (recipe.ingredients.isEmpty()) {
