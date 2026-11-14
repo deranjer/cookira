@@ -284,11 +284,15 @@ class CookiraRepository(
      * phone just saves upload time on mobile data. Re-encoding drops EXIF, so the
      * orientation is applied to the pixels here.
      */
-    private fun readImageBytes(uri: Uri): ByteArray {
+    internal fun readImageBytes(uri: Uri): ByteArray {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw ApiException("Couldn't read that photo.")
+        val stream = resolver.openInputStream(uri) ?: throw ApiException("Couldn't read that photo.")
+        // A bounds-only decode always returns null, even for a valid image.
+        stream.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw ApiException("Couldn't read that photo.")
+        }
         var sample = 1
         val longest = maxOf(bounds.outWidth, bounds.outHeight)
         while (longest / (sample * 2) >= MAX_UPLOAD_EDGE) sample *= 2
