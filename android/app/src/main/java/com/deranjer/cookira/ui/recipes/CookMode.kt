@@ -1,7 +1,10 @@
 package com.deranjer.cookira.ui.recipes
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
@@ -98,11 +102,31 @@ fun CookModeScreen(
     val scope = rememberCoroutineScope()
     var showAll by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var showAlarmAccess by remember { mutableStateOf(false) }
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val startTimer = { label: String, seconds: Int ->
         // The timer runs either way; without notification permission it just can't ring when the app is closed.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        CookTimers.start(context, label, recipe.title, seconds)
+        if (CookTimers.start(context, label, recipe.title, seconds)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            showAlarmAccess = true
+        }
+    }
+    if (showAlarmAccess) {
+        AlertDialog(
+            onDismissRequest = { showAlarmAccess = false },
+            title = { Text("Allow cooking timers") },
+            text = { Text("Allow Alarms & reminders so cooking timers can ring on time, even with the screen off. Then return here and tap Start timer again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAlarmAccess = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, "package:${context.packageName}".toUri()))
+                    }
+                }) { Text("Open settings") }
+            },
+            dismissButton = { TextButton(onClick = { showAlarmAccess = false }) { Text("Cancel") } },
+        )
     }
     val page = pager.currentPage
     val onDone = page >= steps.size
