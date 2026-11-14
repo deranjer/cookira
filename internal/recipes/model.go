@@ -51,6 +51,9 @@ const (
 type Group struct {
 	Name  string   `json:"name"`
 	Items []string `json:"items"`
+	// Entries, when supplied, are authoritative. Items is a display projection
+	// retained for older clients, exports, search and revision snapshots.
+	Entries []Ingredient `json:"entries,omitempty"`
 }
 
 // Step is one numbered direction, optionally with lettered sub-steps.
@@ -276,6 +279,37 @@ func apply(r *Recipe, f Fields) error {
 		r.Tags = *f.Tags
 	}
 	if f.Ingredients != nil {
+		// Older clients send display lines. Preserve structured entries for lines
+		// they leave intact, including reordered lines and edits to other fields.
+		known := map[string][]Ingredient{}
+		for _, g := range r.Ingredients {
+			for i, e := range g.Entries {
+				if i < len(g.Items) {
+					key := g.Items[i]
+					known[key] = append(known[key], e)
+				}
+			}
+		}
+		for gi := range *f.Ingredients {
+			g := &(*f.Ingredients)[gi]
+			if g.Entries != nil {
+				continue
+			}
+			entries := []Ingredient{}
+			hasStructured := false
+			for _, line := range cleanLines(g.Items) {
+				if matches := known[line]; len(matches) > 0 {
+					entries = append(entries, matches[0])
+					known[line] = matches[1:]
+					hasStructured = true
+				} else {
+					entries = append(entries, Ingredient{Text: line})
+				}
+			}
+			if hasStructured {
+				g.Entries = entries
+			}
+		}
 		r.Ingredients = *f.Ingredients
 	}
 	if f.Steps != nil {
@@ -349,6 +383,11 @@ func normalize(r *Recipe) error {
 
 	groups := make([]Group, 0, len(r.Ingredients))
 	for _, g := range r.Ingredients {
+		if g.Entries != nil {
+			if err := normalizeIngredients(&g); err != nil {
+				return err
+			}
+		}
 		items := cleanLines(g.Items)
 		if len(items) == 0 {
 			continue
@@ -356,7 +395,7 @@ func normalize(r *Recipe) error {
 		if len(items) > maxItems {
 			return invalid("at most %d ingredients per group", maxItems)
 		}
-		groups = append(groups, Group{Name: strings.TrimSpace(g.Name), Items: items})
+		groups = append(groups, Group{Name: strings.TrimSpace(g.Name), Items: items, Entries: g.Entries})
 	}
 	if len(groups) > maxGroups {
 		return invalid("at most %d ingredient groups", maxGroups)

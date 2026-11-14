@@ -104,6 +104,7 @@ type restoreInput struct {
 }
 
 func (s *Server) registerRecipeRoutes() {
+	registerCatalogRoutes(s)
 	huma.Register(s.humaAPI, huma.Operation{
 		OperationID: "list-recipes",
 		Method:      http.MethodGet,

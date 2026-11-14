@@ -8,10 +8,14 @@ site; built on the same stack as Loopira.
   revocable, view-only **share link** (`/s/<token>`) that works without one.
 - **Structured recipes.** Ingredient groups, numbered steps with sub-steps,
   tags, timings, notes (markdown), a header photo.
-- **Grocery view.** On web and Android, open a recipe's grocery list to copy all
-  ingredients or select only what you need to buy. Matching names and units are
-  totaled across ingredient groups, with the original amounts shown underneath.
-  Different units, preparations, ranges and ambiguous entries stay separate.
+- **Ingredient catalog.** The web editor stores quantity, unit, size, preparation,
+  notes and optional status separately, with shared ingredient identities,
+  aliases and grocery categories. Manage the catalog from the ingredient editor;
+  typing an unfamiliar ingredient adds it when the recipe is saved.
+- **Grocery view.** On web and Android, shared ingredient identities and compatible
+  units are totaled across groups, with source amounts retained. Preparation stays
+  in the recipe; different sizes, ranges and entries with notes stay separate.
+  Optional ingredients start unchecked. Legacy text remains readable and editable.
 - **Agent-friendly.** `/mcp` exposes tools to search, create, patch, and share
   recipes. Agents create **drafts**; a person publishes. Every change (web or
   agent, with the connected app's name) is recorded and can be restored.
@@ -80,6 +84,51 @@ A native Android client lives in [`android/`](android/README.md) and is distribu
 my self-hosted F-Droid repo: a signed APK is attached to each `vX.Y.Z` GitHub Release.
 
 ## Development
+
+### Structured ingredient preview
+
+```sh
+docker compose -f docker-compose.ingredients.yml up -d --build
+python scripts/seed-ingredient-preview.py
+```
+
+Open http://localhost:8081 and sign in with `tester@cookira.local` /
+`CookiraTest!2026`. This local preview uses separate database/image volumes from
+the normal Compose stack. The seed script leaves existing example slugs alone.
+Three recipes exercise alias/unit merging, ranges and optional ingredients,
+and conversion of an older text recipe using **Structure this ingredient**.
+Stop the preview with `docker compose -f docker-compose.ingredients.yml stop`.
+
+Ingredient groups can now include `entries`, which is authoritative when supplied:
+
+```json
+{
+  "name": "Sauce",
+  "items": [],
+  "entries": [
+    {"name": "scallion", "quantity": 2, "preparation": "sliced"},
+    {"ingredientId": "olive-oil", "quantity": 1, "unit": "tbsp"},
+    {"name": "salt", "notes": "to taste"},
+    {"text": "1 (14 oz) can tomatoes"}
+  ]
+}
+```
+
+Use `ingredientId` to reference the catalog or `name` to resolve a canonical name
+or alias (new names are created atomically with the recipe). The server generates
+`items` as display text for old clients, search, exports and cook mode. Unchanged
+lines submitted by old editors retain their structure; edited text becomes an
+explicit text fallback. Existing recipes and revisions are not guessed or rewritten.
+The Android editor currently edits those display lines; structured field editing
+and catalog management are available in the web editor.
+
+`GET /api/v1/ingredients` lists the catalog. `POST /api/v1/ingredients` accepts
+`{name, category, aliases}` to create one, or includes `id` to edit one. Canonical
+names and aliases share a unique namespace. MCP exposes `list_ingredients` and
+`save_ingredient`; recipe create/update tools accept the same structured groups.
+Catalog name/category edits appear in current recipe views; history retains the
+original snapshot. Volume-to-mass conversion is not inferred. Alternatives and
+package notation can be retained in notes or original text without unsafe merging.
 
 ```sh
 docker compose up -d db          # Postgres 18 on localhost:5434

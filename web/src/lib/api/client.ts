@@ -1,4 +1,5 @@
 import type {
+  CatalogIngredient,
   OAuthAuthorizeInfo,
   OAuthConnection,
   Recipe,
@@ -68,6 +69,12 @@ async function request<T>(path: string, init?: RequestInit, prefix = '/api/v1'):
 }
 
 const json = (body: unknown) => JSON.stringify(body)
+
+export const ingredientsApi = {
+  list: () => request<CatalogIngredient[]>('/ingredients'),
+  save: (input: Omit<CatalogIngredient, 'id'> & { id?: string }) =>
+    request<CatalogIngredient>('/ingredients', { method: 'POST', body: json(input) }),
+}
 
 export const authApi = {
   me: () => request<User>('/auth/me'),

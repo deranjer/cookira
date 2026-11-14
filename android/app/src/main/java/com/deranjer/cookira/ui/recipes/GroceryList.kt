@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.round
 
-data class GroceryItem(val text: String, val sources: List<String>)
+data class GroceryItem(val text: String, val sources: List<String>, val optional: Boolean = false, val category: String = "")
 
 /** Conservative free-text totals. Keep in sync with web/src/lib/grocery.ts. */
 object GroceryList {
@@ -43,7 +43,7 @@ object GroceryList {
         return BigDecimal.valueOf(value).round(MathContext(12)).stripTrailingZeros().toPlainString()
     }
 
-    fun build(groups: List<IngredientGroup>): List<GroceryItem> {
+    private fun legacy(groups: List<IngredientGroup>): List<GroceryItem> {
         data class Row(var text: String, val sources: MutableList<String>, var amount: Double = 0.0, val suffix: String = "")
         val rows = mutableListOf<Row>()
         val merged = mutableMapOf<String, Int>()
@@ -74,6 +74,52 @@ object GroceryList {
             }
         }
         return rows.map { GroceryItem(it.text, it.sources.toList()) }
+    }
+
+    fun build(groups: List<IngredientGroup>): List<GroceryItem> {
+        data class Row(var item: GroceryItem, var amount: Double? = null, val unit: String = "", val suffix: String = "", val factor: Double = 1.0)
+        val conversion = mapOf(
+            "tsp" to ("us-volume" to 1.0), "tbsp" to ("us-volume" to 3.0), "cup" to ("us-volume" to 48.0),
+            "g" to ("metric-mass" to 1.0), "kg" to ("metric-mass" to 1000.0),
+            "oz" to ("us-mass" to 1.0), "lb" to ("us-mass" to 16.0),
+            "ml" to ("metric-volume" to 1.0), "l" to ("metric-volume" to 1000.0),
+        )
+        val rows = mutableListOf<Row>()
+        val merged = mutableMapOf<List<String>, Int>()
+        val unstructured = mutableListOf<IngredientGroup>()
+        for (group in groups) {
+            val entries = group.entries
+            if (entries == null) { unstructured.add(group); continue }
+            for ((index, e) in entries.withIndex()) {
+                if (e.text != null) { unstructured.add(IngredientGroup(group.name, listOf(e.text))); continue }
+                val rawUnit = e.unit.lowercase(Locale.ROOT)
+                val unit = units[rawUnit] ?: rawUnit
+                val suffix = listOf(e.size, e.name).filter { it.isNotBlank() }.joinToString(" ")
+                val amount = e.quantity
+                val range = e.quantityMax?.let { "–${format(it)}" } ?: ""
+                val text = listOf(amount?.let { "${format(it)}$range" } ?: "", unit, suffix).filter { it.isNotBlank() }.joinToString(" ") +
+                    (if (e.notes.isNotBlank()) ", ${e.notes}" else "") + (if (e.optional) " (optional)" else "")
+                val sourceText = group.items.getOrNull(index) ?: text
+                val source = if (group.name.isNotBlank()) "${group.name.trim()}: $sourceText" else sourceText
+                val item = GroceryItem(text, listOf(source), e.optional, e.category)
+                if (e.ingredientId.isBlank() || amount == null || e.quantityMax != null || e.notes.isNotBlank()) { rows.add(Row(item)); continue }
+                val (family, factor) = conversion[unit] ?: (unit to 1.0)
+                val key = listOf(e.ingredientId, family, e.size.trim().lowercase(Locale.ROOT), e.optional.toString())
+                val found = merged[key]
+                if (found == null) {
+                    merged[key] = rows.size
+                    rows.add(Row(item, amount, unit, suffix, factor))
+                } else {
+                    val row = rows[found]
+                    row.amount = row.amount!! + amount * factor / row.factor
+                    row.item = row.item.copy(
+                        text = listOf(format(row.amount!!), row.unit, row.suffix).filter { it.isNotBlank() }.joinToString(" ") + (if (e.optional) " (optional)" else ""),
+                        sources = row.item.sources + source,
+                    )
+                }
+            }
+        }
+        return rows.map { it.item } + legacy(unstructured)
     }
 
     fun text(items: List<GroceryItem>, selected: Set<Int>? = null): String =

@@ -19,15 +19,16 @@ import {
 } from '@mantine/core'
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { IngredientFields } from '../components/IngredientFields'
 import { PhotoField } from '../components/PhotoField'
 import { DEFAULT_FRAMING, framingOf, isDefaultFraming, type Framing } from '../components/FramedImage'
 import { ApiError, recipesApi } from '../lib/api/client'
 import { useCreateRecipe, useRecipe, useTags, useUpdateRecipe } from '../lib/api/hooks'
-import type { Recipe, RecipeInput } from '../lib/api/types'
+import type { Ingredient, Recipe, RecipeInput } from '../lib/api/types'
 
 interface GroupDraft {
   name: string
-  items: string // one ingredient per line
+  entries: Ingredient[]
 }
 
 interface StepDraft {
@@ -68,8 +69,8 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
   const [notes, setNotes] = useState(recipe?.notes ?? '')
   const [groups, setGroups] = useState<GroupDraft[]>(
     recipe && recipe.ingredients.length > 0
-      ? recipe.ingredients.map((g) => ({ name: g.name, items: g.items.join('\n') }))
-      : [{ name: '', items: '' }],
+      ? recipe.ingredients.map((g) => ({ name: g.name, entries: g.entries ?? g.items.map(text => ({ text })) }))
+      : [{ name: '', entries: [{ name: '' }] }],
   )
   const [steps, setSteps] = useState<StepDraft[]>(
     recipe && recipe.steps.length > 0
@@ -97,7 +98,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
       tags,
       status: status as Recipe['status'],
       notes,
-      ingredients: groups.map((g) => ({ name: g.name.trim(), items: lines(g.items) })),
+      ingredients: groups.map((g) => ({ name: g.name.trim(), items: [], entries: g.entries.filter(e => e.text?.trim() || e.name?.trim() || e.ingredientId || e.originalText?.trim() || e.quantity !== undefined || e.quantityMax !== undefined || e.unit?.trim() || e.size?.trim() || e.preparation?.trim() || e.notes?.trim() || e.optional) })),
       steps: steps.map((s) => ({ text: s.text.trim(), substeps: lines(s.substeps) })),
       // For a new recipe the photo (and so its framing) is uploaded after creation.
       ...(recipe ? framing : {}),
@@ -167,13 +168,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
                     value={g.name}
                     onChange={(e) => setGroups(groups.map((x, j) => (j === i ? { ...x, name: e.currentTarget.value } : x)))}
                   />
-                  <Textarea
-                    autosize
-                    minRows={3}
-                    placeholder="One ingredient per line"
-                    value={g.items}
-                    onChange={(e) => setGroups(groups.map((x, j) => (j === i ? { ...x, items: e.currentTarget.value } : x)))}
-                  />
+                  <IngredientFields entries={g.entries} onChange={(entries) => setGroups(groups.map((x, j) => j === i ? { ...x, entries } : x))} />
                 </Stack>
                 <Stack gap={2}>
                   <ActionIcon variant="subtle" color="gray" aria-label="Move up" onClick={() => setGroups(move(groups, i, i - 1))}>
@@ -189,7 +184,7 @@ function EditorForm({ recipe }: { recipe?: Recipe }) {
               </Group>
             </Paper>
           ))}
-          <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => setGroups([...groups, { name: '', items: '' }])} w="fit-content">
+          <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => setGroups([...groups, { name: '', entries: [{ name: '' }] }])} w="fit-content">
             Add ingredient group
           </Button>
         </Stack>

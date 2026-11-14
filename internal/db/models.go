@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IngredientCatalog struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category"`
+}
+
+type IngredientName struct {
+	Name         string `json:"name"`
+	IngredientID string `json:"ingredient_id"`
+}
+
 type Invite struct {
 	ID        pgtype.UUID        `json:"id"`
 	TokenHash string             `json:"token_hash"`

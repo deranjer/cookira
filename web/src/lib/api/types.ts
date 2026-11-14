@@ -24,6 +24,29 @@ export interface InviteInfo {
 export interface IngredientGroup {
   name: string
   items: string[]
+  entries?: Ingredient[]
+}
+
+export interface Ingredient {
+  ingredientId?: string
+  name?: string
+  quantity?: number
+  quantityMax?: number
+  unit?: string
+  size?: string
+  preparation?: string
+  optional?: boolean
+  notes?: string
+  originalText?: string
+  text?: string
+  category?: string
+}
+
+export interface CatalogIngredient {
+  id: string
+  name: string
+  category: string
+  aliases: string[]
 }
 
 export interface Step {

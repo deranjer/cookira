@@ -90,7 +90,23 @@ data class InviteInfoDto(val email: String? = null, val role: String)
 data class AcceptInviteRequest(val name: String, val email: String? = null, val password: String, val tokens: Boolean = true)
 
 @Serializable
-data class IngredientGroup(val name: String = "", val items: List<String> = emptyList())
+data class IngredientGroup(val name: String = "", val items: List<String> = emptyList(), val entries: List<Ingredient>? = null)
+
+@Serializable
+data class Ingredient(
+    val ingredientId: String = "",
+    val name: String = "",
+    val quantity: Double? = null,
+    val quantityMax: Double? = null,
+    val unit: String = "",
+    val size: String = "",
+    val preparation: String = "",
+    val optional: Boolean = false,
+    val notes: String = "",
+    val originalText: String = "",
+    val text: String? = null,
+    val category: String = "Other",
+)
 
 @Serializable
 data class Step(val text: String = "", val substeps: List<String> = emptyList())

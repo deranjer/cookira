@@ -78,7 +78,11 @@ func (s *Service) Get(ctx context.Context, ref string) (Recipe, error) {
 	if err != nil {
 		return Recipe{}, err
 	}
-	return fromRow(row)
+	r, err := fromRow(row)
+	if err != nil {
+		return r, err
+	}
+	return s.hydrateIngredients(ctx, r)
 }
 
 func (s *Service) resolve(ctx context.Context, q *db.Queries, ref string, allowDeleted bool) (db.Recipe, error) {
@@ -118,6 +122,9 @@ func (s *Service) Create(ctx context.Context, f Fields) (Recipe, error) {
 		}
 		slug, err := s.uniqueSlug(ctx, q, slug, explicit)
 		if err != nil {
+			return err
+		}
+		if err := bindIngredients(ctx, q, &r); err != nil {
 			return err
 		}
 		ing, steps, err := encode(r)
@@ -175,6 +182,9 @@ func (s *Service) AddIngredient(ctx context.Context, ref, group, text string) (R
 	return s.mutate(ctx, ref, "update", false, func(r *Recipe, _ *bool) error {
 		for i := range r.Ingredients {
 			if strings.EqualFold(r.Ingredients[i].Name, group) {
+				if r.Ingredients[i].Entries != nil {
+					r.Ingredients[i].Entries = append(r.Ingredients[i].Entries, Ingredient{Text: strings.TrimSpace(text)})
+				}
 				r.Ingredients[i].Items = append(r.Ingredients[i].Items, text)
 				return normalize(r)
 			}
@@ -262,6 +272,11 @@ func (s *Service) mutate(ctx context.Context, ref, action string, allowDeleted b
 		if err != nil {
 			return err
 		}
+		// Match old-client display lines against the current catalog names,
+		// including when a canonical name was edited since the last recipe save.
+		if err := bindIngredients(ctx, q, &r); err != nil {
+			return err
+		}
 		deleted := row.DeletedAt.Valid
 		oldSlug := r.Slug
 		if err := fn(&r, &deleted); err != nil {
@@ -271,6 +286,9 @@ func (s *Service) mutate(ctx context.Context, ref, action string, allowDeleted b
 			if r.Slug, err = s.uniqueSlug(ctx, q, r.Slug, true); err != nil {
 				return err
 			}
+		}
+		if err := bindIngredients(ctx, q, &r); err != nil {
+			return err
 		}
 		ing, steps, err := encode(r)
 		if err != nil {
@@ -456,7 +474,11 @@ func (s *Service) GetShared(ctx context.Context, token string) (Recipe, error) {
 	if err != nil {
 		return Recipe{}, err
 	}
-	return fromRow(row)
+	r, err := fromRow(row)
+	if err != nil {
+		return r, err
+	}
+	return s.hydrateIngredients(ctx, r)
 }
 
 // ---- Images ----

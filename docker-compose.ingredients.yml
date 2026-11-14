@@ -1,0 +1,37 @@
+# Isolated preview; does not use the normal Cookira database or image volumes.
+name: cookira-ingredients
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/cookira?sslmode=disable
+      ADDR: ":8080"
+      PUBLIC_URL: http://localhost:8081
+      IMAGES_DIR: /data/images
+    volumes:
+      - images:/data/images
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: postgres:18-alpine
+    ports:
+      - "127.0.0.1:5435:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cookira
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  db_data:
+  images:

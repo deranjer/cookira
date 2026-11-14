@@ -15,7 +15,7 @@ export function GroceryView({ ingredients }: { ingredients: IngredientGroup[] })
 
 function GroceryContents({ ingredients }: { ingredients: IngredientGroup[] }) {
   const [items] = useState(() => groceryList(ingredients))
-  const [selected, setSelected] = useState(() => new Set(items.map((_, i) => i)))
+  const [selected, setSelected] = useState(() => new Set(items.flatMap((item, i) => item.optional ? [] : [i])))
   const [status, setStatus] = useState('')
   const [fallback, setFallback] = useState<string | null>(null)
   const copy = async (all: boolean) => {
@@ -30,7 +30,7 @@ function GroceryContents({ ingredients }: { ingredients: IngredientGroup[] }) {
     }
   }
   return <Stack>
-    <Text size="sm" c="dimmed">Matching ingredient names and units are totaled across groups. Other entries stay separate. Select what you need to buy.</Text>
+    <Text size="sm" c="dimmed">Shared ingredients are totaled across groups, including compatible units. Preparation stays in the recipe. Ranges and notes stay separate; optional ingredients start unchecked.</Text>
     {items.length === 0 ? <Text c="dimmed">No ingredients yet.</Text> : <>
       <Group>
         <Button onClick={() => void copy(true)}>Copy all</Button>
@@ -41,6 +41,7 @@ function GroceryContents({ ingredients }: { ingredients: IngredientGroup[] }) {
         <Button size="compact-sm" variant="subtle" onClick={() => setSelected(new Set())}>Clear selection</Button>
       </Group>
       {items.map((item, i) => <Stack gap={4} key={i}>
+        {item.category && <Text size="xs" c="dimmed" pl={30}>{item.category}</Text>}
         <Checkbox label={item.text} checked={selected.has(i)} onChange={() => setSelected((previous) => {
           const next = new Set(previous)
           if (!next.delete(i)) next.add(i)
