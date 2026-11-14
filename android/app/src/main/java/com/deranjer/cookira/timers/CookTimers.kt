@@ -25,8 +25,9 @@ data class CookTimer(val id: Int, val label: String, val recipe: String, val end
 /**
  * Kitchen timers. The countdown shown in the app is just [CookTimer.endAt] minus the clock; the
  * ring comes from an alarm-clock alarm, which Android delivers on time even in Doze and with the
- * screen off and needs no special permission. The list lives in memory (a timer outlives the
- * screen, not the process), but the alarm and its notification do not depend on the app being alive.
+ * screen off. Android 12+ requires the Alarms & reminders special access. The list lives in memory
+ * (a timer outlives the screen, not the process), but the alarm and its notification do not depend
+ * on the app being alive.
  */
 object CookTimers {
     private const val CHANNEL = "timers"
@@ -34,15 +35,23 @@ object CookTimers {
     val timers: StateFlow<List<CookTimer>> = _timers.asStateFlow()
     private var nextId = 1
 
-    fun start(context: Context, label: String, recipe: String, seconds: Int) {
+    /** Returns false when Alarms & reminders access is needed; no timer is added in that case. */
+    fun start(context: Context, label: String, recipe: String, seconds: Int): Boolean {
         val app = context.applicationContext
+        val alarms = app.getSystemService(AlarmManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarms.canScheduleExactAlarms()) return false
         val timer = synchronized(this) {
             CookTimer(nextId++, label, recipe, System.currentTimeMillis() + seconds * 1000L)
         }
-        _timers.update { it + timer }
-        val alarms = app.getSystemService(AlarmManager::class.java)
         val open = PendingIntent.getActivity(app, 0, Intent(app, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        alarms.setAlarmClock(AlarmManager.AlarmClockInfo(timer.endAt, open), ringIntent(app, timer))
+        try {
+            alarms.setAlarmClock(AlarmManager.AlarmClockInfo(timer.endAt, open), ringIntent(app, timer))
+        } catch (_: SecurityException) {
+            // Access may be revoked between the check and scheduling the alarm.
+            return false
+        }
+        _timers.update { it + timer }
+        return true
     }
 
     fun cancel(context: Context, id: Int) {

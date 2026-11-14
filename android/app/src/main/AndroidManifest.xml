@@ -8,6 +8,8 @@
 
     <!-- Cooking timers ring as a notification (asked for the first time a timer is started). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Exact cooking timers require special access on Android 12 and later. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Photos are taken through the system camera app (ACTION_IMAGE_CAPTURE) and picked
          with the system photo picker, so no CAMERA or storage permission is needed. -->
