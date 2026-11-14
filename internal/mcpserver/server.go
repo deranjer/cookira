@@ -24,7 +24,12 @@ import (
 )
 
 const instructions = `Cookira is a household recipe book. Recipes are structured: ingredients are
-groups of plain-text lines (e.g. group "Broth": ["2 cups chicken stock", "1 tbsp soy sauce"]),
+groups with structured entries: {name, items:[], entries:[{ingredientId or name, quantity,
+unit, preparation, size, notes, optional}]}. Use list_ingredients to reuse catalog identities
+and aliases. New names are added on save. Original/imported lines can use {text:"..."};
+legacy items string arrays are also accepted. Entries are authoritative when supplied;
+items in responses is the generated display text for older clients. For ranges use
+quantityMax; omit quantity for unmeasured ingredients and put "to taste" in notes.
 steps are numbered directions with optional sub-steps, and tags are lowercase words.
 Search first (list_recipes with q) before creating, to avoid duplicates. New recipes are
 created as drafts; leave status alone unless the user asks you to publish. Numbers use 0 for
@@ -58,6 +63,8 @@ func New(svc *recipes.Service) *mcp.Server {
 		Name:        "list_tags",
 		Description: "List all tags in use with recipe counts. Reuse existing tags where they fit.",
 	}, s.listTags)
+	addTool(server, &mcp.Tool{Name: "list_ingredients", Description: "List the shared ingredient catalog, canonical ids, aliases and grocery categories."}, s.listIngredients)
+	addTool(server, &mcp.Tool{Name: "save_ingredient", Description: "Create or edit a shared ingredient; supply id to edit. Names and aliases must be unique. Requires read-write access."}, s.saveIngredient)
 
 	addTool(server, &mcp.Tool{
 		Name:        "get_recipe_history",
@@ -237,7 +244,7 @@ type recipeFields struct {
 	Notes       *string         `json:"notes,omitempty" jsonschema:"markdown notes, tips, substitutions"`
 	Status      *string         `json:"status,omitempty" jsonschema:"draft or published"`
 	Tags        []string        `json:"tags,omitempty" jsonschema:"lowercase tags; replaces the whole list"`
-	Ingredients []recipes.Group `json:"ingredients,omitempty" jsonschema:"ingredient groups, each {name, items[]}; use name \"\" for an ungrouped list; replaces the whole list"`
+	Ingredients []recipes.Group `json:"ingredients,omitempty" jsonschema:"ingredient groups with name, items (legacy display strings), and optional entries (structured ingredient usages); entries overrides items; replaces the whole list"`
 	Steps       []recipes.Step  `json:"steps,omitempty" jsonschema:"ordered directions, each {text, substeps[]}; replaces the whole list"`
 	ImageFocusX *float64        `json:"imageFocusX,omitempty" jsonschema:"update only: photo focal point, 0 (left) to 1 (right); default 0.5"`
 	ImageFocusY *float64        `json:"imageFocusY,omitempty" jsonschema:"update only: photo focal point, 0 (top) to 1 (bottom); default 0.5"`
@@ -402,9 +409,9 @@ func (s *toolServer) revokeShare(ctx context.Context, _ *mcp.CallToolRequest, a 
 }
 
 type setImageArgs struct {
-	Recipe      string `json:"recipe" jsonschema:"recipe id (uuid) or slug"`
-	ImageURL    string `json:"imageUrl,omitempty" jsonschema:"public http(s) URL of a JPEG, PNG or WebP image"`
-	ImageBase64 string `json:"imageBase64,omitempty" jsonschema:"the image bytes, base64-encoded (optionally as a data: URL)"`
+	Recipe      string   `json:"recipe" jsonschema:"recipe id (uuid) or slug"`
+	ImageURL    string   `json:"imageUrl,omitempty" jsonschema:"public http(s) URL of a JPEG, PNG or WebP image"`
+	ImageBase64 string   `json:"imageBase64,omitempty" jsonschema:"the image bytes, base64-encoded (optionally as a data: URL)"`
 	FocusX      *float64 `json:"focusX,omitempty" jsonschema:"optional focal point, 0 (left) to 1 (right); default 0.5 (centred)"`
 	FocusY      *float64 `json:"focusY,omitempty" jsonschema:"optional focal point, 0 (top) to 1 (bottom); default 0.5 (centred)"`
 	Zoom        *float64 `json:"zoom,omitempty" jsonschema:"optional zoom around the focal point, 1 (whole photo) to 4; default 1"`

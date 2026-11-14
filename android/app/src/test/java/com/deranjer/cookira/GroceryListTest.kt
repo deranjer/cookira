@@ -1,11 +1,26 @@
 package com.deranjer.cookira
 
 import com.deranjer.cookira.data.IngredientGroup
+import com.deranjer.cookira.data.Ingredient
 import com.deranjer.cookira.ui.recipes.GroceryList
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class GroceryListTest {
+    @Test fun `structured identities merge preparation and compatible units`() {
+        val items = GroceryList.build(listOf(IngredientGroup(entries = listOf(
+            Ingredient(ingredientId = "green-onion", name = "green onion", quantity = 2.0, preparation = "sliced"),
+            Ingredient(ingredientId = "green-onion", name = "green onion", quantity = 3.0, preparation = "diced"),
+            Ingredient(ingredientId = "olive-oil", name = "olive oil", quantity = 1.0, unit = "tbsp"),
+            Ingredient(ingredientId = "olive-oil", name = "olive oil", quantity = 3.0, unit = "tsp"),
+            Ingredient(ingredientId = "lime", name = "lime", quantity = 1.0, optional = true),
+            Ingredient(ingredientId = "onion", name = "onion", quantity = 2.0, quantityMax = 3.0),
+        ))))
+        assertEquals(listOf("5 green onion", "2 tbsp olive oil", "1 lime (optional)", "2–3 onion"), items.map { it.text })
+        assertEquals(true, items[2].optional)
+        assertEquals(2, items[0].sources.size)
+    }
+
     private fun texts(vararg items: String) = GroceryList.build(listOf(IngredientGroup(items = items.toList()))).map { it.text }
 
     @Test fun `totals across groups and retains source amounts`() {

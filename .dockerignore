@@ -6,3 +6,5 @@ internal/webapp/dist/*
 !internal/webapp/dist/index.html
 *.log
 server.exe
+*.jks
+*.keystore

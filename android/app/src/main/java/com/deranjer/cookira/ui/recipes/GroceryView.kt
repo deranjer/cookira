@@ -36,7 +36,7 @@ fun GroceryView(ingredients: List<IngredientGroup>) {
     OutlinedButton(onClick = { opened = true }) { Text("Grocery view") }
     if (opened) {
         val items = remember(ingredients) { GroceryList.build(ingredients) }
-        var selected by remember(items) { mutableStateOf(items.indices.toSet()) }
+        var selected by remember(items) { mutableStateOf(items.indices.filter { !items[it].optional }.toSet()) }
         var status by remember { mutableStateOf("") }
         val context = LocalContext.current
         ModalBottomSheet(
@@ -45,7 +45,7 @@ fun GroceryView(ingredients: List<IngredientGroup>) {
         ) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Grocery list", style = MaterialTheme.typography.headlineSmall)
-                Text("Matching ingredient names and units are totaled across groups. Other entries stay separate. Select what you need to buy.", style = MaterialTheme.typography.bodyMedium)
+                Text("Shared ingredients and compatible units are totaled across groups. Ranges and notes stay separate; optional ingredients start unchecked.", style = MaterialTheme.typography.bodyMedium)
                 if (items.isEmpty()) Text("No ingredients yet.")
                 if (items.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
