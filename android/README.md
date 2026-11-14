@@ -12,6 +12,9 @@ non-browser clients: no backend changes needed.
 - **Recipes**: search, tag filter, All/Published/Drafts, infinite scroll, pull to refresh.
 - **Recipe view**: photo, stats, tick-off ingredients, lettered sub-steps, markdown notes,
   keep-screen-on while cooking (toggle in Settings), share as plain text (replaces Print).
+- **Grocery view**: total matching ingredient names and units across groups, select
+  what you need, and copy all or selected items as one ingredient per line. Available
+  offline and on shared recipes; selection is separate from cooking checkboxes.
 - **Create / edit**: all fields, ingredient groups and steps with reorder, tags with
   suggestions, status, **photo** from gallery or camera (downscaled before upload).
 - **Offline reading**: the whole library is saved on the phone (synced on sign-in, on pull to

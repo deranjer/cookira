@@ -7,6 +7,7 @@ import { CookMode } from './CookMode'
 import { DurationButtons, TimerDock, useCookTimers } from './CookTimers'
 import { FramedImage, HEADER_ASPECT, framingOf } from './FramedImage'
 import { IngredientCheck, IngredientChecklist } from './IngredientChecklist'
+import { GroceryView } from './GroceryView'
 import type { Recipe } from '../lib/api/types'
 import { matchIngredients, splitPhase } from '../lib/cook'
 import { formatMinutes } from '../theme'
@@ -124,9 +125,10 @@ export function RecipeView({ recipe, imageUrl }: { recipe: Recipe; imageUrl?: st
       <Grid gutter="xl">
         <Grid.Col span={{ base: 12, md: 5 }}>
           <Box className="recipe-sticky">
-            <Title order={2} mb="sm">
-              Ingredients
-            </Title>
+            <Group justify="space-between" mb="sm">
+              <Title order={2}>Ingredients</Title>
+              <GroceryView key={`${recipe.id}:${recipe.updatedAt}`} ingredients={recipe.ingredients} />
+            </Group>
             <IngredientChecklist recipe={recipe} checked={checked} onToggle={toggle} />
           </Box>
         </Grid.Col>

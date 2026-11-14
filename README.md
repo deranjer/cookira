@@ -8,6 +8,10 @@ site; built on the same stack as Loopira.
   revocable, view-only **share link** (`/s/<token>`) that works without one.
 - **Structured recipes.** Ingredient groups, numbered steps with sub-steps,
   tags, timings, notes (markdown), a header photo.
+- **Grocery view.** On web and Android, open a recipe's grocery list to copy all
+  ingredients or select only what you need to buy. Matching names and units are
+  totaled across ingredient groups, with the original amounts shown underneath.
+  Different units, preparations, ranges and ambiguous entries stay separate.
 - **Agent-friendly.** `/mcp` exposes tools to search, create, patch, and share
   recipes. Agents create **drafts**; a person publishes. Every change (web or
   agent, with the connected app's name) is recorded and can be restored.
